@@ -21,7 +21,7 @@ from pathlib import Path
 
 import numpy as np
 import FreeSimpleGUI as sg
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 from rembg import remove, new_session
 
 # ---------------------------------------------------------------------------
@@ -93,6 +93,23 @@ class RenderConfig:
     add_rain:      bool  = False
     add_vignette:  bool  = True
     add_scanlines: bool  = False
+    output_static: bool  = False
+    # Tone & stylization (applied to subject / full frame)
+    tone_mode:    str   = "color"   # "color"|"bw"|"sepia"|"negative"|"solarize"|"historical"
+    stylize_mode: str   = "none"    # "none"|"cartoon"|"watercolor"|"oil"|"sketch"
+    # Optical post-processing
+    add_chroma_aberration: bool  = False
+    chroma_shift:          int   = 5
+    add_bloom:             bool  = False
+    bloom_radius:          int   = 12
+    bloom_strength:        float = 0.40
+    # Per-frame / animated
+    add_film_grain:       bool  = False
+    film_grain_intensity: float = 0.04
+    add_snow:             bool  = False
+    add_holo:             bool  = False   # holographic shimmer on subject
+    add_bokeh:            bool  = False   # blur background layers behind subject
+    bokeh_radius:         int   = 18
     sizes: dict = field(default_factory=lambda: dict(ALL_SIZES))
 
 
@@ -391,10 +408,16 @@ def _step_sizes(data: dict) -> str:
         [sg.Checkbox("Channel Art  (2560 x 1440)",      key="-CA-", default=ck("channel_art"),
                      text_color=_FG, background_color=_BG, pad=((16, 0), (2, 2)))],
         [sg.Checkbox("Podcast Square  (3000 x 3000)",   key="-PS-", default=ck("podcast_square"),
+                     text_color=_FG, background_color=_BG, pad=((16, 0), (2, 6)))],
+        [sg.Text("─" * 52, text_color="#333438", background_color=_BG,
+                 pad=((12, 12), (4, 4)))],
+        [_T("Output formats:", subdued=True)],
+        [sg.Checkbox("Static PNG  (peak-lightning frame, one per size)", key="-STATIC-",
+                     default=data.get("output_static", False),
                      text_color=_FG, background_color=_BG, pad=((16, 0), (2, 8)))],
         [_nav(back="Go Back", cancel="Cancel", primary="Continue")],
     ]
-    w = _open("Output Sizes", layout, 260)
+    w = _open("Output Sizes", layout, 340)
     while True:
         ev, vals = w.read()
         if ev in (sg.WIN_CLOSED, "Cancel"): w.close(); return "cancel"
@@ -407,7 +430,8 @@ def _step_sizes(data: dict) -> str:
             if not sizes:
                 sg.popup_error("Select at least one output size.", title="Error")
                 continue
-            data["sizes"] = sizes
+            data["sizes"]         = sizes
+            data["output_static"] = vals["-STATIC-"]
             w.close(); return "next"
 
 
@@ -423,7 +447,10 @@ def _step_layers(data: dict) -> str:
                     pad=((4, 12), (2, 4)))
 
     # --- Pill toggle state (buttons, not checkboxes) ---
-    _TOG_KEYS = ["SMOKE", "FLASH", "TEXT", "EMBERS", "RAIN", "VIGNETTE", "SCANLINES"]
+    _TOG_KEYS = [
+        "SMOKE", "FLASH", "TEXT", "EMBERS", "RAIN", "VIGNETTE", "SCANLINES",
+        "CHROMA", "BLOOM", "FILM_GRAIN", "SNOW", "HOLO", "BOKEH",
+    ]
     _TOG_DEFAULTS = {
         "SMOKE":     d("add_smoke",    True),
         "FLASH":     d("add_flash",    True),
@@ -432,6 +459,12 @@ def _step_layers(data: dict) -> str:
         "RAIN":      d("add_rain",     False),
         "VIGNETTE":  d("add_vignette", True),
         "SCANLINES": d("add_scanlines", False),
+        "CHROMA":    d("add_chroma_aberration", False),
+        "BLOOM":     d("add_bloom",    False),
+        "FILM_GRAIN":d("add_film_grain", False),
+        "SNOW":      d("add_snow",     False),
+        "HOLO":      d("add_holo",     False),
+        "BOKEH":     d("add_bokeh",    False),
     }
     _TOG_LABELS = {
         "SMOKE":     "Smoke / mist animation",
@@ -441,10 +474,38 @@ def _step_layers(data: dict) -> str:
         "RAIN":      "Rain / drizzle",
         "VIGNETTE":  "Vignette",
         "SCANLINES": "Scan lines  (CRT)",
+        "CHROMA":    "Chromatic aberration  (RGB fringe)",
+        "BLOOM":     "Bloom / glow  (highlight expansion)",
+        "FILM_GRAIN":"Film grain  (per-frame noise)",
+        "SNOW":      "Snow / hail",
+        "HOLO":      "Holographic shimmer  (subject)",
+        "BOKEH":     "Bokeh  (blur background layers)",
     }
     tog = dict(_TOG_DEFAULTS)   # mutable state
 
     def _tk(k): return f"-TOG_{k}-"
+
+    # --- Tone mode combo ---
+    _TONE_MAP = {
+        "Color":          "color",
+        "B&W":            "bw",
+        "Sepia":          "sepia",
+        "Negative":       "negative",
+        "Solarize":       "solarize",
+        "Historical Photo": "historical",
+    }
+    _TONE_INV  = {v: k for k, v in _TONE_MAP.items()}
+    TONE_OPTS  = list(_TONE_MAP.keys())
+    tone_def   = _TONE_INV.get(d("tone_mode", "color"), "Color")
+
+    # --- Stylize mode combo ---
+    _STYLE_MAP = {
+        "None": "none", "Cartoon": "cartoon", "Watercolor": "watercolor",
+        "Oil":  "oil",  "Sketch":  "sketch",
+    }
+    _STYLE_INV = {v: k for k, v in _STYLE_MAP.items()}
+    STYLE_OPTS = list(_STYLE_MAP.keys())
+    style_def  = _STYLE_INV.get(d("stylize_mode", "none"), "None")
 
     def _trow(key, pad_top=2):
         return [
@@ -516,11 +577,23 @@ def _step_layers(data: dict) -> str:
         [sg.Text("─" * 52, text_color="#333438", background_color=_BG, pad=((12, 12), (4, 4)))],
         _trow("EMBERS", pad_top=4),
         _trow("RAIN"),
+        _trow("SNOW"),
         _trow("VIGNETTE"),
         _trow("SCANLINES"),
+        [sg.Text("─" * 52, text_color="#333438", background_color=_BG, pad=((12, 12), (4, 4)))],
+        [_T("Tone & Color:", subdued=True),
+         sg.Combo(TONE_OPTS,  default_value=tone_def,  key="-TONE-",  size=(18, 1), **combo_kw)],
+        [_T("Stylize subject:", subdued=True),
+         sg.Combo(STYLE_OPTS, default_value=style_def, key="-STYLE-", size=(18, 1), **combo_kw)],
+        [sg.Text("─" * 52, text_color="#333438", background_color=_BG, pad=((12, 12), (4, 4)))],
+        _trow("CHROMA"),
+        _trow("BLOOM"),
+        _trow("FILM_GRAIN"),
+        _trow("HOLO"),
+        _trow("BOKEH"),
         [_nav(back="Go Back", cancel="Cancel", primary="Continue")],
     ]
-    w = _open("Animation Layers", layout, 660)
+    w = _open("Animation Layers", layout, 920)
     while True:
         ev, vals = w.read()
         if ev in (sg.WIN_CLOSED, "Cancel"): w.close(); return "cancel"
@@ -545,6 +618,7 @@ def _step_layers(data: dict) -> str:
                 "add_text":           tog["TEXT"],
                 "add_embers":         tog["EMBERS"],
                 "add_rain":           tog["RAIN"],
+                "add_snow":           tog["SNOW"],
                 "add_vignette":       tog["VIGNETTE"],
                 "add_scanlines":      tog["SCANLINES"],
                 "add_lightning":      lv != "Off",
@@ -553,6 +627,16 @@ def _step_layers(data: dict) -> str:
                 "branch_depth":       int(vals["-DEPTH-"]),
                 "fork_concentration": int(vals["-FORKS-"]),
                 "subbranch_length":   vals["-SUBLEN-"] / 100.0,
+                # tone & stylize
+                "tone_mode":          _TONE_MAP.get(vals["-TONE-"],  "color"),
+                "stylize_mode":       _STYLE_MAP.get(vals["-STYLE-"], "none"),
+                # optical
+                "add_chroma_aberration": tog["CHROMA"],
+                "add_bloom":             tog["BLOOM"],
+                # per-frame
+                "add_film_grain":        tog["FILM_GRAIN"],
+                "add_holo":              tog["HOLO"],
+                "add_bokeh":             tog["BOKEH"],
             }
             w.close(); return "next"
 
@@ -745,8 +829,22 @@ def _step_confirm(data: dict) -> str:
         layer_lines.append(f'  Gothic text  --  "{tag_text}"')
     if layers.get("add_embers"):    layer_lines.append("  Embers / sparks")
     if layers.get("add_rain"):      layer_lines.append("  Rain / drizzle")
+    if layers.get("add_snow"):      layer_lines.append("  Snow / hail")
     if layers.get("add_vignette"):  layer_lines.append("  Vignette")
     if layers.get("add_scanlines"): layer_lines.append("  Scan lines  (CRT)")
+    _tone_label = {"bw":"B&W","sepia":"Sepia","negative":"Negative",
+                   "solarize":"Solarize","historical":"Historical Photo"}
+    tm = layers.get("tone_mode", "color")
+    if tm != "color":
+        layer_lines.append(f"  Tone: {_tone_label.get(tm, tm)}")
+    sm = layers.get("stylize_mode", "none")
+    if sm != "none":
+        layer_lines.append(f"  Stylize subject: {sm.capitalize()}")
+    if layers.get("add_chroma_aberration"): layer_lines.append("  Chromatic aberration")
+    if layers.get("add_bloom"):             layer_lines.append("  Bloom / glow")
+    if layers.get("add_film_grain"):        layer_lines.append("  Film grain")
+    if layers.get("add_holo"):              layer_lines.append("  Holographic shimmer")
+    if layers.get("add_bokeh"):             layer_lines.append("  Bokeh  (background blur)")
     layers_str = "\n".join(layer_lines) or "  (none)"
 
     typo_lines = []
@@ -781,6 +879,7 @@ def _step_confirm(data: dict) -> str:
         typo_str,
         "",
         f"GIFs to produce: {len(data.get('sizes', {}))}",
+        "Static PNG per size: yes" if data.get("output_static") else "",
     ])
 
     layout = [
@@ -892,6 +991,15 @@ def run_gui() -> "RenderConfig | None":
                 add_rain      = ly.get("add_rain", False),
                 add_vignette  = ly.get("add_vignette", True),
                 add_scanlines = ly.get("add_scanlines", False),
+                output_static = data.get("output_static", False),
+                tone_mode     = ly.get("tone_mode",    "color"),
+                stylize_mode  = ly.get("stylize_mode", "none"),
+                add_chroma_aberration = ly.get("add_chroma_aberration", False),
+                add_bloom             = ly.get("add_bloom",             False),
+                add_film_grain        = ly.get("add_film_grain",        False),
+                add_snow              = ly.get("add_snow",              False),
+                add_holo              = ly.get("add_holo",              False),
+                add_bokeh             = ly.get("add_bokeh",             False),
                 sizes         = data["sizes"],
             )
 
@@ -945,6 +1053,8 @@ def apply_image_processing(img: Image.Image, cfg: RenderConfig) -> Image.Image:
         nw = max(1, int(img.width  * cfg.resize_pct / 100))
         nh = max(1, int(img.height * cfg.resize_pct / 100))
         img = img.resize((nw, nh), Image.LANCZOS)
+    if cfg.stylize_mode != "none":
+        img = apply_stylize(img, cfg.stylize_mode)
     return img
 
 
@@ -1089,35 +1199,40 @@ def make_lightning_layer(
     if alpha <= 0:
         return layer
 
-    base_w = max(2, int(w * 0.003))
+    # Real lightning channels are a few centimetres wide — use a thin base so
+    # the perceived width comes from the blurred corona halo, not stroke weight.
+    base_w = max(1, int(w * 0.0015))
 
     for bolt_idx, points in enumerate(bolts):
         scale = 1.0 if bolt_idx == 0 else 0.45
         segs  = list(zip(points, points[1:]))
 
+        # Outer diffuse corona — electric blue glow
         g1 = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
         d1 = ImageDraw.Draw(g1)
         for p0, p1 in segs:
             d1.line([p0, p1],
-                    fill=(80, 140, 255, int(65 * alpha * scale)),
-                    width=max(1, int(base_w * 8 * scale)))
-        g1 = g1.filter(ImageFilter.GaussianBlur(radius=max(6, int(w * 0.018))))
+                    fill=(60, 120, 255, int(45 * alpha * scale)),
+                    width=max(1, int(base_w * 5 * scale)))
+        g1 = g1.filter(ImageFilter.GaussianBlur(radius=max(4, int(w * 0.010))))
         layer = Image.alpha_composite(layer, g1)
 
+        # Inner blue-white halo
         g2 = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
         d2 = ImageDraw.Draw(g2)
         for p0, p1 in segs:
             d2.line([p0, p1],
-                    fill=(200, 220, 255, int(140 * alpha * scale)),
-                    width=max(1, int(base_w * 3 * scale)))
-        g2 = g2.filter(ImageFilter.GaussianBlur(radius=max(2, int(w * 0.005))))
+                    fill=(200, 225, 255, int(130 * alpha * scale)),
+                    width=max(1, int(base_w * 2 * scale)))
+        g2 = g2.filter(ImageFilter.GaussianBlur(radius=max(1, int(w * 0.004))))
         layer = Image.alpha_composite(layer, g2)
 
+        # Hair-thin white core
         core = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
         dc   = ImageDraw.Draw(core)
         for p0, p1 in segs:
             dc.line([p0, p1],
-                    fill=(232, 244, 255, int(245 * alpha * scale)),
+                    fill=(245, 250, 255, int(255 * alpha * scale)),
                     width=max(1, int(base_w * scale)))
         layer = Image.alpha_composite(layer, core)
 
@@ -1347,7 +1462,7 @@ def make_atmospheric_lightning_layer(
     if alpha <= 0:
         return layer
 
-    base_w = max(1, int(w * 0.003))
+    base_w = max(1, int(w * 0.0015))
     md     = max(1, max_depth)
 
     for seg in bolt_trees:
@@ -1356,34 +1471,34 @@ def make_atmospheric_lightning_layer(
         pts   = seg["path"]
         segs  = list(zip(pts, pts[1:]))
 
-        # Wide diffuse corona only for primary/secondary branches
+        # Outer corona only on primary/secondary branches — keeps sub-branches crisp
         if scale > 0.5:
             g1 = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
             d1 = ImageDraw.Draw(g1)
             for p0, p1 in segs:
                 d1.line([p0, p1],
-                        fill=(80, 140, 255, int(50 * alpha * scale)),
-                        width=max(1, int(base_w * 7 * scale)))
-            g1 = g1.filter(ImageFilter.GaussianBlur(radius=max(4, int(w * 0.014))))
+                        fill=(80, 140, 255, int(40 * alpha * scale)),
+                        width=max(1, int(base_w * 4 * scale)))
+            g1 = g1.filter(ImageFilter.GaussianBlur(radius=max(3, int(w * 0.009))))
             layer = Image.alpha_composite(layer, g1)
 
-        # Mid cyan-white halo
+        # Inner blue-white halo (all levels, tapers with scale)
         g2 = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
         d2 = ImageDraw.Draw(g2)
         for p0, p1 in segs:
             d2.line([p0, p1],
-                    fill=(200, 220, 255, int(120 * alpha * scale)),
-                    width=max(1, int(base_w * 2.5 * scale)))
+                    fill=(200, 220, 255, int(100 * alpha * scale)),
+                    width=max(1, int(base_w * 2 * scale)))
         g2 = g2.filter(ImageFilter.GaussianBlur(radius=max(1, int(w * 0.003))))
         layer = Image.alpha_composite(layer, g2)
 
-        # Bright white-blue core
+        # Hair-thin white core
         core = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
         dc   = ImageDraw.Draw(core)
         for p0, p1 in segs:
             dc.line([p0, p1],
-                    fill=(232, 244, 255, int(230 * alpha * (0.25 + scale * 0.75))),
-                    width=max(1, int(base_w * max(0.3, scale))))
+                    fill=(232, 244, 255, int(220 * alpha * (0.3 + scale * 0.7))),
+                    width=max(1, int(base_w * max(0.35, scale))))
         layer = Image.alpha_composite(layer, core)
 
     return layer
@@ -1488,6 +1603,220 @@ def make_scanlines(canvas_size: tuple[int, int], alpha: int = 20) -> Image.Image
     for y in range(0, h, 2):
         draw.line([(0, y), (w - 1, y)], fill=(0, 0, 0, alpha))
     return scan
+
+
+# ---------------------------------------------------------------------------
+# Tone & color mapping — applied to the full composited frame
+# ---------------------------------------------------------------------------
+
+def apply_tone_mode(img: Image.Image, mode: str) -> Image.Image:
+    """Transform color space of img. Preserves alpha if present."""
+    alpha = img.split()[3] if img.mode == "RGBA" else None
+    rgb   = img.convert("RGB")
+
+    if mode == "bw":
+        out = rgb.convert("L").convert("RGB")
+
+    elif mode == "sepia":
+        gray = rgb.convert("L")
+        out  = Image.merge("RGB", (
+            gray.point(lambda p: min(255, int(p * 1.08))),
+            gray.point(lambda p: min(255, int(p * 0.87))),
+            gray.point(lambda p: min(255, int(p * 0.69))),
+        ))
+
+    elif mode == "negative":
+        out = ImageOps.invert(rgb)
+
+    elif mode == "solarize":
+        out = ImageOps.solarize(rgb, threshold=128)
+
+    elif mode == "historical":
+        # Faded sepia with lifted blacks + subtle edge burn
+        gray = rgb.convert("L")
+        out  = Image.merge("RGB", (
+            gray.point(lambda p: min(255, int(p * 0.94 + 22))),
+            gray.point(lambda p: min(255, int(p * 0.79 + 12))),
+            gray.point(lambda p: min(255, int(p * 0.62 +  8))),
+        ))
+        w2, h2 = out.size
+        xi = np.linspace(-1, 1, w2, dtype=np.float32)
+        yi = np.linspace(-1, 1, h2, dtype=np.float32)
+        X, Y  = np.meshgrid(xi, yi)
+        burn  = np.clip((X ** 2 + Y ** 2) * 0.42, 0, 1)[:, :, np.newaxis]
+        out   = Image.fromarray(
+            (np.array(out, dtype=np.float32) * (1 - burn * 0.45)).clip(0, 255).astype(np.uint8),
+            "RGB",
+        )
+
+    else:
+        out = rgb  # "color" passthrough
+
+    if alpha is not None:
+        out = out.convert("RGBA")
+        out.putalpha(alpha)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Optical post-processing
+# ---------------------------------------------------------------------------
+
+def apply_chromatic_aberration(img: Image.Image, shift: int = 5) -> Image.Image:
+    """Shift R channel right and B channel left — RGB fringing at edges."""
+    if shift <= 0:
+        return img
+    alpha = img.split()[3] if img.mode == "RGBA" else None
+    arr   = np.array(img.convert("RGB"), dtype=np.uint8)
+    out   = np.zeros_like(arr)
+    out[:, shift:,  0] = arr[:, :-shift, 0]   # R → right
+    out[:, :,       1] = arr[:, :,       1]   # G unchanged
+    out[:, :-shift, 2] = arr[:, shift:,  2]   # B → left
+    result = Image.fromarray(out, "RGB")
+    if alpha is not None:
+        result = result.convert("RGBA")
+        result.putalpha(alpha)
+    return result
+
+
+def apply_bloom(
+    img: Image.Image,
+    radius: int = 12,
+    strength: float = 0.40,
+) -> Image.Image:
+    """Expand bright highlights — overexposed glow on light sources."""
+    arr  = np.array(img.convert("RGB"), dtype=np.float32)
+    lum  = arr.mean(axis=2)
+    mask = np.clip((lum - 185) / 70.0, 0, 1)[:, :, np.newaxis]
+    hi   = Image.fromarray((arr * mask).clip(0, 255).astype(np.uint8), "RGB")
+    glow = hi.filter(ImageFilter.GaussianBlur(radius=radius))
+    out  = np.clip(arr + np.array(glow, dtype=np.float32) * strength, 0, 255).astype(np.uint8)
+    result = Image.fromarray(out, "RGB")
+    if img.mode == "RGBA":
+        result = result.convert("RGBA")
+        result.putalpha(img.split()[3])
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Per-frame procedural effects
+# ---------------------------------------------------------------------------
+
+def apply_film_grain(img: Image.Image, intensity: float = 0.04, seed: int = 0) -> Image.Image:
+    """Add per-frame luminance noise that changes with seed."""
+    rng  = np.random.default_rng(seed)
+    arr  = np.array(img.convert("RGB"), dtype=np.float32)
+    arr += rng.normal(0, intensity * 255, arr.shape).astype(np.float32)
+    result = Image.fromarray(arr.clip(0, 255).astype(np.uint8), "RGB")
+    if img.mode == "RGBA":
+        result = result.convert("RGBA")
+        result.putalpha(img.split()[3])
+    return result
+
+
+def make_snow_frame(
+    canvas_size: tuple[int, int],
+    t: float,
+    n_flakes: int = 200,
+) -> Image.Image:
+    """Gently falling snow / hail particles."""
+    w, h  = canvas_size
+    layer = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
+    draw  = ImageDraw.Draw(layer)
+    rng   = random.Random(42)
+    flakes = [
+        (rng.random(), rng.random(), rng.randint(1, 3), rng.uniform(0.4, 1.0))
+        for _ in range(n_flakes)
+    ]
+    for x_frac, phase_off, size, brightness in flakes:
+        phase = (t * 0.55 + phase_off) % 1.0
+        drift = math.sin(phase * math.tau + x_frac * 10) * 0.018
+        px = int(((x_frac + drift) % 1.0) * w)
+        py = int(phase * h)
+        draw.ellipse([px - size, py - size, px + size, py + size],
+                     fill=(220, 235, 255, int(brightness * 190)))
+    return layer
+
+
+def make_holo_frame(
+    canvas_size: tuple[int, int],
+    t: float,
+    subject_mask: Image.Image,
+) -> Image.Image:
+    """Animated rainbow shimmer confined to the subject mask.
+    subject_mask is a grayscale (L) image in canvas coordinates.
+    """
+    w, h = canvas_size
+    xi = np.linspace(0, 1, w, dtype=np.float32)
+    yi = np.linspace(0, 1, h, dtype=np.float32)
+    X, Y = np.meshgrid(xi, yi)
+
+    # Scrolling hue field
+    hue  = (X * 0.7 + Y * 0.2 + t * 0.45) % 1.0
+    h6   = hue * 6
+    sec  = np.floor(h6).astype(int) % 6
+    f    = h6 - np.floor(h6)
+    sat, val = 0.75, 0.90
+    p, q, tv = val * (1 - sat), val * (1 - sat * f), val * (1 - sat * (1 - f))
+    R = np.select([sec==0, sec==1, sec==2, sec==3, sec==4], [val,q,p,p,tv], default=val)
+    G = np.select([sec==0, sec==1, sec==2, sec==3, sec==4], [tv,val,val,q,p], default=p)
+    B = np.select([sec==0, sec==1, sec==2, sec==3, sec==4], [p,p,tv,val,val], default=q)
+
+    # Shimmer wave that animates across the surface
+    shimmer = np.sin(X * math.pi * 4 + t * math.tau * 1.5) * 0.5 + 0.5
+
+    mask_img = (subject_mask.resize(canvas_size, Image.LANCZOS)
+                if subject_mask.size != canvas_size else subject_mask)
+    mask_arr = np.array(mask_img, dtype=np.float32) / 255.0
+
+    alpha_arr = (shimmer * mask_arr * 90).clip(0, 255)
+    out = np.stack(
+        [R * 255, G * 255, B * 255, alpha_arr], axis=2
+    ).clip(0, 255).astype(np.uint8)
+    return Image.fromarray(out, "RGBA")
+
+
+# ---------------------------------------------------------------------------
+# Stylization (requires opencv-python — graceful fallback if absent)
+# ---------------------------------------------------------------------------
+
+def apply_stylize(img: Image.Image, mode: str) -> Image.Image:
+    """Apply stylization to the subject image: cartoon / watercolor / oil / sketch.
+    Returns the original image unchanged if opencv-python is not installed.
+    """
+    if mode == "none":
+        return img
+    try:
+        import cv2
+    except ImportError:
+        print(f"  [Warning] opencv-python not installed — stylize_mode={mode!r} skipped.")
+        return img
+
+    alpha = img.split()[3] if img.mode == "RGBA" else None
+    rgb   = np.array(img.convert("RGB"))
+    bgr   = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+
+    if mode == "cartoon":
+        out_bgr = cv2.stylization(bgr, sigma_s=60, sigma_r=0.45)
+    elif mode == "watercolor":
+        out_bgr = cv2.stylization(bgr, sigma_s=60, sigma_r=0.07)
+    elif mode == "oil":
+        try:
+            out_bgr = cv2.xphoto.oilPainting(bgr, size=4, dynRatio=1)
+        except AttributeError:
+            # xphoto module not compiled — fall back to heavy stylization
+            out_bgr = cv2.stylization(bgr, sigma_s=40, sigma_r=0.30)
+    elif mode == "sketch":
+        _, sketch_gray = cv2.pencilSketch(bgr, sigma_s=60, sigma_r=0.07, shade_factor=0.05)
+        out_bgr = cv2.cvtColor(sketch_gray, cv2.COLOR_GRAY2BGR)
+    else:
+        return img
+
+    result = Image.fromarray(cv2.cvtColor(out_bgr, cv2.COLOR_BGR2RGB), "RGB")
+    if alpha is not None:
+        result = result.convert("RGBA")
+        result.putalpha(alpha)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1640,11 +1969,13 @@ def build_frame(
 
     frame = Image.new("RGBA", canvas_size, cfg.bg_color + (255,))
 
-    # Rain — behind everything else
+    # --- L1: Atmosphere (rain / snow) — behind everything ---
     if cfg.add_rain:
         frame = Image.alpha_composite(frame, make_rain_frame(canvas_size, t))
+    if cfg.add_snow:
+        frame = Image.alpha_composite(frame, make_snow_frame(canvas_size, t))
 
-    # Lightning behind smoke so glow illuminates the mist
+    # --- L2: Lightning (behind smoke so glow illuminates mist) ---
     if cfg.add_lightning and lightning_alpha > 0:
         if cfg.lightning_mode in ("ground_strike", "atmospheric", "full_storm") and bolt_trees:
             frame = Image.alpha_composite(
@@ -1662,7 +1993,7 @@ def build_frame(
                 frame, make_lightning_layer(canvas_size, lightning_bolts, lightning_alpha)
             )
 
-    # Smoke
+    # --- L3: Smoke ---
     if cfg.add_smoke:
         frame = Image.alpha_composite(
             frame,
@@ -1670,19 +2001,29 @@ def build_frame(
                              smoke_x_min, smoke_x_max, smoke_y, cfg.smoke_tint),
         )
 
-    # Embers (in front of smoke, behind subject)
+    # --- L4: Embers (in front of smoke, behind subject) ---
     if cfg.add_embers and embers_origin:
         frame = Image.alpha_composite(
             frame, make_embers_frame(canvas_size, t, embers_origin[0], embers_origin[1])
         )
 
-    # Subject
+    # --- Bokeh: blur the background stack before subject paste ---
+    if cfg.add_bokeh and cfg.bokeh_radius > 0:
+        frame = frame.filter(ImageFilter.GaussianBlur(radius=cfg.bokeh_radius))
+
+    # --- L5: Subject ---
     lx, ly = lantern_pos
     lw, lh = lantern_size
     scaled = lantern.resize((lw, lh), Image.LANCZOS)
     frame.paste(scaled, (lx, ly), scaled)
 
-    # Text
+    # --- L6: Holographic shimmer (subject mask, animated) ---
+    if cfg.add_holo:
+        subj_mask = Image.new("L", canvas_size, 0)
+        subj_mask.paste(scaled.split()[3], (lx, ly))
+        frame = Image.alpha_composite(frame, make_holo_frame(canvas_size, t, subj_mask))
+
+    # --- L7: Text ---
     if cfg.add_text and font and word_layout:
         n_words = len(word_layout)
         act_len = total_frames / n_words
@@ -1701,19 +2042,41 @@ def build_frame(
                 _draw_word(draw, word, wx, wy, font,
                            tag.text_color, cfg.shadow_color, tag.shadow, tag.glow)
 
-    # Flash — full scene illumination, on top
+    # --- L8: Flash ---
     if cfg.add_flash and flash_alpha > 0:
         frame = Image.alpha_composite(frame, make_flash_layer(canvas_size, flash_alpha))
 
-    # Vignette
+    # --- Tone mapping (before optical effects so chroma/bloom see the toned image) ---
+    if cfg.tone_mode != "color":
+        frame = apply_tone_mode(frame, cfg.tone_mode)
+        if frame.mode != "RGBA":
+            frame = frame.convert("RGBA")
+
+    # --- Chromatic aberration ---
+    if cfg.add_chroma_aberration:
+        frame = apply_chromatic_aberration(
+            frame.convert("RGB"), cfg.chroma_shift
+        ).convert("RGBA")
+
+    # --- Bloom ---
+    if cfg.add_bloom:
+        frame = apply_bloom(
+            frame.convert("RGB"), cfg.bloom_radius, cfg.bloom_strength
+        ).convert("RGBA")
+
+    # --- L9: Vignette ---
     if vignette_layer is not None:
         frame = Image.alpha_composite(frame, vignette_layer)
 
-    # Scan lines (topmost)
+    # --- L10: Scan lines ---
     if scanlines_layer is not None:
         frame = Image.alpha_composite(frame, scanlines_layer)
 
-    return frame.convert("RGB")
+    # --- Film grain — very last so noise sits on top of all layers ---
+    rgb_out = frame.convert("RGB")
+    if cfg.add_film_grain:
+        rgb_out = apply_film_grain(rgb_out, cfg.film_grain_intensity, seed=frame_idx)
+    return rgb_out
 
 
 # ---------------------------------------------------------------------------
@@ -1752,58 +2115,71 @@ def generate_size(
         font        = get_font(font_size)
         word_layout = build_word_layout(tag, font, w, h, ly, lh, font_size)
 
-    # Lightning pre-generation
-    lightning_bolts = None
-    bolt_trees      = None
-    ground_points   = []
-    if cfg.add_lightning:
-        if cfg.lightning_mode == "ground_strike":
-            bolt_trees = []
-            n = cfg.n_bolts
-            origins = ([0.50] if n == 1 else
-                       [0.25 + i * (0.52 / max(1, n - 1)) for i in range(n)])
-            for i, ox in enumerate(origins):
-                segs, gpt = generate_ground_strike(
-                    canvas_size, seed=w * h + i * 37,
-                    origin_x_frac=ox, depth=cfg.branch_depth,
-                    fork_concentration=cfg.fork_concentration,
-                    subbranch_length=cfg.subbranch_length,
-                )
-                bolt_trees.extend(segs)
-                ground_points.append(gpt)
-
-        elif cfg.lightning_mode == "atmospheric":
-            bolt_trees, _ = generate_atmospheric_intracloud(
-                canvas_size, seed=w * h,
-                n_spines=cfg.n_bolts, depth=cfg.branch_depth,
-                fork_concentration=cfg.fork_concentration,
-                subbranch_length=cfg.subbranch_length,
-            )
-
-        elif cfg.lightning_mode == "full_storm":
-            bolt_trees, ground_points = generate_full_storm(
-                canvas_size, seed=w * h,
-                n_ground_strikes=cfg.n_bolts, depth=cfg.branch_depth,
-                fork_concentration=cfg.fork_concentration,
-                subbranch_length=cfg.subbranch_length,
-            )
-
-        else:  # "simple"
-            lightning_bolts = generate_lightning_bolt(canvas_size, seed=w * h)
-
-    # Strike timing — two strikes per loop
+    # Strike timing — two strikes per loop; built first so n_strikes is known
+    # before geometry generation.
     strike_starts    = [int(n_frames * 0.17), int(n_frames * 0.58)]
+    n_strikes        = len(strike_starts)
     flash_alphas     = [0.0] * n_frames
     lightning_alphas = [0.0] * n_frames
+    frame_strike_idx = [-1]  * n_frames   # which strike is active per frame
     bolt_envelope    = [0.4, 1.0, 0.55, 0.2]
-    for sf in strike_starts:
+    for s_idx, sf in enumerate(strike_starts):
         if cfg.add_flash:
             for j, fa in enumerate(_FLASH_ENVELOPE):
                 flash_alphas[(sf + j) % n_frames] = max(flash_alphas[(sf + j) % n_frames], fa)
         if cfg.add_lightning:
             for j, la in enumerate(bolt_envelope):
-                lightning_alphas[(sf + j) % n_frames] = max(
-                    lightning_alphas[(sf + j) % n_frames], la)
+                fi = (sf + j) % n_frames
+                lightning_alphas[fi] = max(lightning_alphas[fi], la)
+                frame_strike_idx[fi] = s_idx
+
+    # Pre-generate unique bolt geometry per strike so each flash shows a
+    # different pattern — seeds are offset by a large coprime so results diverge.
+    _s_bolts: list = [None] * n_strikes   # simple-mode path lists
+    _s_trees: list = [None] * n_strikes   # atmospheric segment dicts
+    _s_gpts:  list = [[]   for _ in range(n_strikes)]
+
+    if cfg.add_lightning:
+        for s in range(n_strikes):
+            sseed = w * h + s * 1337
+            if cfg.lightning_mode == "ground_strike":
+                n = cfg.n_bolts
+                origins = ([0.50] if n == 1 else
+                           [0.25 + i * (0.52 / max(1, n - 1)) for i in range(n)])
+                trees, gpts_s = [], []
+                for i, ox in enumerate(origins):
+                    segs, gpt = generate_ground_strike(
+                        canvas_size, seed=sseed + i * 37,
+                        origin_x_frac=ox, depth=cfg.branch_depth,
+                        fork_concentration=cfg.fork_concentration,
+                        subbranch_length=cfg.subbranch_length,
+                    )
+                    trees.extend(segs)
+                    gpts_s.append(gpt)
+                _s_trees[s] = trees
+                _s_gpts[s]  = gpts_s
+
+            elif cfg.lightning_mode == "atmospheric":
+                trees, _ = generate_atmospheric_intracloud(
+                    canvas_size, seed=sseed,
+                    n_spines=cfg.n_bolts, depth=cfg.branch_depth,
+                    fork_concentration=cfg.fork_concentration,
+                    subbranch_length=cfg.subbranch_length,
+                )
+                _s_trees[s] = trees
+
+            elif cfg.lightning_mode == "full_storm":
+                trees, gpts_s = generate_full_storm(
+                    canvas_size, seed=sseed,
+                    n_ground_strikes=cfg.n_bolts, depth=cfg.branch_depth,
+                    fork_concentration=cfg.fork_concentration,
+                    subbranch_length=cfg.subbranch_length,
+                )
+                _s_trees[s] = trees
+                _s_gpts[s]  = gpts_s
+
+            else:  # "simple"
+                _s_bolts[s] = generate_lightning_bolt(canvas_size, seed=sseed)
 
     # Pre-compute static layers
     vignette_layer  = make_vignette(canvas_size)  if cfg.add_vignette  else None
@@ -1814,6 +2190,10 @@ def generate_size(
 
     frames: list[Image.Image] = []
     for i in range(n_frames):
+        s_idx     = frame_strike_idx[i]
+        cur_bolts = _s_bolts[s_idx] if s_idx >= 0 else None
+        cur_trees = _s_trees[s_idx] if s_idx >= 0 else None
+        cur_gpts  = _s_gpts[s_idx]  if s_idx >= 0 else []
         f = build_frame(
             canvas_size     = canvas_size,
             lantern         = lantern,
@@ -1828,9 +2208,9 @@ def generate_size(
             word_layout     = word_layout,
             cfg             = cfg,
             flash_alpha     = flash_alphas[i],
-            lightning_bolts = lightning_bolts,
-            bolt_trees      = bolt_trees,
-            ground_points   = ground_points,
+            lightning_bolts = cur_bolts,
+            bolt_trees      = cur_trees,
+            ground_points   = cur_gpts,
             lightning_alpha = lightning_alphas[i],
             embers_origin   = embers_origin,
             vignette_layer  = vignette_layer,
@@ -1849,6 +2229,42 @@ def generate_size(
     )
     kb = out.stat().st_size // 1024
     print(f"    → {out}  ({kb} KB)")
+
+    if cfg.output_static:
+        if cfg.add_lightning and any(la > 0 for la in lightning_alphas):
+            peak_la = max(lightning_alphas)
+            peak_fi = lightning_alphas.index(peak_la)
+            peak_si = frame_strike_idx[peak_fi]
+        else:
+            peak_fi = n_frames // 4
+            peak_la = 0.0
+            peak_si = -1
+        static_frame = build_frame(
+            canvas_size     = canvas_size,
+            lantern         = lantern,
+            lantern_pos     = (lx, ly),
+            lantern_size    = (lw, lh),
+            smoke_x_min     = smoke_x_min,
+            smoke_x_max     = smoke_x_max,
+            smoke_y         = smoke_y,
+            frame_idx       = peak_fi,
+            total_frames    = n_frames,
+            font            = font,
+            word_layout     = word_layout,
+            cfg             = cfg,
+            flash_alpha     = flash_alphas[peak_fi],
+            lightning_bolts = _s_bolts[peak_si] if peak_si >= 0 else None,
+            bolt_trees      = _s_trees[peak_si] if peak_si >= 0 else None,
+            ground_points   = _s_gpts[peak_si]  if peak_si >= 0 else [],
+            lightning_alpha = peak_la,
+            embers_origin   = embers_origin,
+            vignette_layer  = vignette_layer,
+            scanlines_layer = scanlines_layer,
+        )
+        static_out = cfg.output_dir / f"brand_{size_name}_peak.png"
+        static_frame.save(static_out)
+        static_kb = static_out.stat().st_size // 1024
+        print(f"    → {static_out}  ({static_kb} KB, static PNG)")
 
 
 # ---------------------------------------------------------------------------
