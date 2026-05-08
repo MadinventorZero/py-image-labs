@@ -9,7 +9,7 @@ Usage:
     python brand_image_gen.py
 
 Requirements:
-    pip install rembg[cpu] pillow numpy FreeSimpleGUI
+    pip install rembg[cpu] pillow numpy pywebview
 """
 
 import io
@@ -19,8 +19,11 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import base64
+import threading
+import webview
+
 import numpy as np
-import FreeSimpleGUI as sg
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 from rembg import remove, new_session
 
@@ -40,10 +43,6 @@ GOTHIC_FONT_CACHE = Path(".gothic_font_cache/UnifrakturMaguntia.ttf")
 GOTHIC_FONT_URL = (
     "https://fonts.gstatic.com/s/unifrakturmaguntia/v22/"
     "WWXPlieVYwiGNomYU-ciRLRvEmK7oaVunw.ttf"
-)
-
-_BLANK_GIF_ICON = (
-    "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
 )
 
 # ---------------------------------------------------------------------------
@@ -114,894 +113,147 @@ class RenderConfig:
 
 
 # ---------------------------------------------------------------------------
-# GUI — step-by-step wizard (8 steps)
+# pywebview GUI — web wizard
 # ---------------------------------------------------------------------------
 
-sg.theme("DarkGrey13")
-sg.set_options(icon=_BLANK_GIF_ICON)
-
-_GO   = ("white", "#1a6b3a")
-_GREY = ("white", "#555555")
-_W    = 560
-
-_BG  = "#1c1e23"
-_FG  = "#cccdcf"
-_FG2 = "#888888"
-
-_BG_RGB   = (28, 30, 35)
-_GO_RGB   = (26, 107, 58)
-_GREY_RGB = (85, 85, 85)
+_progress_state: dict = {"progress": 0, "done": False, "error": None, "gif_b64": None}
+_window = None
 
 
-def _T(text: str, bold: bool = False, size: int = 11,
-       subdued: bool = False) -> sg.Text:
-    weight = "bold" if bold else "normal"
-    color  = _FG2 if subdued else _FG
-    return sg.Text(text, font=("Helvetica", size, weight),
-                   text_color=color, background_color=_BG,
-                   pad=((12, 4), (4, 2)))
+class Api:
+    def pick_image(self):
+        paths = _window.create_file_dialog(
+            webview.OPEN_DIALOG,
+            file_types=("Images (*.jpg;*.jpeg;*.png;*.webp)",),
+        )
+        return paths[0] if paths else None
+
+    def pick_output_dir(self):
+        paths = _window.create_file_dialog(webview.FOLDER_DIALOG)
+        return paths[0] if paths else None
+
+    def get_image_preview(self, path: str):
+        try:
+            img = Image.open(path)
+            img.thumbnail((320, 180), Image.LANCZOS)
+            canvas = Image.new("RGB", (320, 180), (20, 22, 27))
+            ox = (320 - img.width) // 2
+            oy = (180 - img.height) // 2
+            if img.mode == "RGBA":
+                canvas.paste(img, (ox, oy), img)
+            else:
+                canvas.paste(img.convert("RGB"), (ox, oy))
+            buf = io.BytesIO()
+            canvas.save(buf, "JPEG", quality=85)
+            return base64.b64encode(buf.getvalue()).decode()
+        except Exception:
+            return None
+
+    def run_generation(self, config: dict) -> dict:
+        global _progress_state
+        _progress_state = {"progress": 0, "done": False, "error": None, "gif_b64": None}
+
+        def _run():
+            global _progress_state
+            try:
+                cfg = _build_render_config(config)
+                run_pipeline(cfg, progress_cb=_set_progress)
+                gif_b64 = _get_preview_gif(cfg)
+                _progress_state = {"progress": 100, "done": True, "error": None, "gif_b64": gif_b64}
+            except Exception as e:
+                _progress_state = {"progress": 0, "done": True, "error": str(e), "gif_b64": None}
+
+        threading.Thread(target=_run, daemon=True).start()
+        return {"status": "started"}
+
+    def get_progress(self) -> dict:
+        return dict(_progress_state)
 
 
-def _open(title: str, layout: list, height: int) -> sg.Window:
-    return sg.Window(title, layout, size=(_W, height),
-                     background_color=_BG,
-                     icon=_BLANK_GIF_ICON, finalize=True)
+def _set_progress(n: int) -> None:
+    global _progress_state
+    _progress_state["progress"] = n
 
 
-def _btn_img(text: str, bg_rgb: tuple, radius: int = 10,
-             font_size: int = 11, bold: bool = False,
-             px: int = 18, py: int = 8) -> bytes:
+def _get_preview_gif(cfg: "RenderConfig"):
     try:
-        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", font_size)
-    except Exception:
-        font = ImageFont.load_default()
-    probe = Image.new("RGB", (1, 1))
-    bbox  = ImageDraw.Draw(probe).textbbox((0, 0), text, font=font)
-    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-    w = tw + px * 2
-    h = th + py * 2
-    img = Image.new("RGB", (w, h), _BG_RGB)
-    d   = ImageDraw.Draw(img)
-    d.rounded_rectangle([0, 0, w - 1, h - 1], radius=radius, fill=bg_rgb)
-    tx = (w - tw) // 2 - bbox[0]
-    ty = (h - th) // 2 - bbox[1]
-    d.text((tx, ty), text, fill=(255, 255, 255), font=font)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
-
-
-def _nav(back: str | None = None, cancel: str | None = None,
-         primary: str = "Continue") -> list:
-    row = []
-    if back:
-        row.append(sg.Button("", key=back,
-                             image_data=_btn_img(back, _GREY_RGB),
-                             border_width=0, button_color=(_BG, _BG),
-                             pad=((8, 4), (12, 10))))
-    if cancel:
-        row.append(sg.Button("", key=cancel,
-                             image_data=_btn_img(cancel, _GREY_RGB),
-                             border_width=0, button_color=(_BG, _BG),
-                             pad=((4, 4), (12, 10))))
-    row.append(sg.Text("", expand_x=True, background_color=_BG))
-    row.append(sg.Button("", key=primary,
-                         image_data=_btn_img(primary, _GO_RGB, bold=True),
-                         border_width=0, button_color=(_BG, _BG),
-                         bind_return_key=True,
-                         pad=((4, 12), (12, 10))))
-    return row
-
-
-def _color_swatch(rgb: tuple, w: int = 28, h: int = 16) -> bytes:
-    img = Image.new("RGB", (w, h), _BG_RGB)
-    d   = ImageDraw.Draw(img)
-    d.rounded_rectangle([1, 1, w - 2, h - 2], radius=4, fill=rgb)
-    buf = io.BytesIO(); img.save(buf, "PNG")
-    return buf.getvalue()
-
-
-_TOGGLE_ON_RGB  = (52, 199, 89)    # iOS-standard green
-_TOGGLE_OFF_RGB = (80, 82, 90)     # dark neutral grey
-
-
-def _toggle_img(on: bool, w: int = 52, h: int = 26) -> bytes:
-    """Pill-shaped toggle switch rendered with PIL — ON=green, OFF=grey."""
-    fill = _TOGGLE_ON_RGB if on else _TOGGLE_OFF_RGB
-    img  = Image.new("RGB", (w, h), _BG_RGB)
-    draw = ImageDraw.Draw(img)
-    draw.rounded_rectangle([0, 0, w - 1, h - 1], radius=h // 2, fill=fill)
-    r  = h // 2 - 3
-    tx = (w - r - 3) if on else (r + 3)
-    draw.ellipse([tx - r, 3, tx + r, h - 4], fill=(255, 255, 255))
-    buf = io.BytesIO(); img.save(buf, "PNG")
-    return buf.getvalue()
-
-
-def _seg_img(text: str, active: bool, w: int = 72, h: int = 26) -> bytes:
-    """One segment of a segmented control — active=project green, inactive=dark."""
-    bg = _GO_RGB if active else (52, 54, 62)
-    try:
-        font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 10)
-    except Exception:
-        font = ImageFont.load_default()
-    img  = Image.new("RGB", (w, h), _BG_RGB)
-    draw = ImageDraw.Draw(img)
-    draw.rounded_rectangle([0, 0, w - 1, h - 1], radius=5, fill=bg)
-    bbox = draw.textbbox((0, 0), text, font=font)
-    tx   = (w - (bbox[2] - bbox[0])) // 2 - bbox[0]
-    ty   = (h - (bbox[3] - bbox[1])) // 2 - bbox[1]
-    draw.text((tx, ty), text, fill=(255, 255, 255), font=font)
-    buf = io.BytesIO(); img.save(buf, "PNG")
-    return buf.getvalue()
-
-
-def _hex_to_rgb(h: str) -> tuple:
-    h = h.strip().lstrip("#")
-    try:
-        return tuple(int(h[i:i+2], 16) for i in (0, 2, 4))
-    except Exception:
-        return (220, 190, 120)
-
-
-def _rgb_to_hex(rgb: tuple) -> str:
-    return "#{:02X}{:02X}{:02X}".format(*rgb)
-
-
-def _update_preview(window: sg.Window, key: str, path: str) -> None:
-    try:
-        img = Image.open(path)
-        img.thumbnail((320, 180), Image.LANCZOS)
-        canvas = Image.new("RGB", (320, 180), (20, 22, 27))
-        ox = (320 - img.width)  // 2
-        oy = (180 - img.height) // 2
-        if img.mode == "RGBA":
-            canvas.paste(img, (ox, oy), img)
-        else:
-            canvas.paste(img.convert("RGB"), (ox, oy))
-        buf = io.BytesIO(); canvas.save(buf, "PNG")
-        window[key].update(data=buf.getvalue())
+        first_size = next(iter(cfg.sizes))
+        gif_path = cfg.output_dir / f"brand_{first_size}.gif"
+        if gif_path.exists():
+            img = Image.open(gif_path)
+            img.thumbnail((480, 270), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, "JPEG", quality=85)
+            return base64.b64encode(buf.getvalue()).decode()
     except Exception:
         pass
+    return None
 
 
-# ---------- individual step renderers ----------
+def _build_render_config(config: dict) -> "RenderConfig":
+    ip = config.get("imgProc", {})
+    ly = config.get("layers", {})
+    td = config.get("tagline", {})
 
-def _step_welcome() -> str:
-    layout = [
-        [_T("Brand Image Generator", bold=True, size=15)],
-        [_T("Create animated GIF brand assets from a single photo.", subdued=True)],
-        [_T("Walk through a few quick steps to configure your render.", subdued=True)],
-        [_nav(cancel="Quit", primary="Get Started")],
-    ]
-    w = _open("Welcome", layout, 180)
-    ev, _ = w.read(); w.close()
-    return "cancel" if ev in (sg.WIN_CLOSED, "Quit") else "next"
+    tag = TaglineConfig(
+        text          = td.get("text", "Thunder Road Rails"),
+        anchor        = td.get("anchor", "center"),
+        offset_y      = float(td.get("offset_y", 0.0)),
+        font_size_pct = float(td.get("font_size_pct", 0.075)),
+        align         = td.get("align", "center"),
+        orientation   = td.get("orientation", "horizontal"),
+        text_color    = tuple(td.get("text_color", [220, 190, 120])),
+        shadow        = bool(td.get("shadow", True)),
+        glow          = bool(td.get("glow", True)),
+    )
 
+    sizes_flags   = config.get("sizes", {})
+    selected_sizes = {k: v for k, v in ALL_SIZES.items() if sizes_flags.get(k, True)}
 
-def _step_source(data: dict) -> str:
-    blank = Image.new("RGB", (320, 180), (20, 22, 27))
-    buf   = io.BytesIO(); blank.save(buf, "PNG")
-    blank_bytes = buf.getvalue()
+    lightning_mode = ly.get("lightning_mode", "simple")
+    add_lightning  = lightning_mode != "off"
 
-    layout = [
-        [_T("Step 1 of 8  —  Input File", bold=True)],
-        [_T("Select the source image to process.", subdued=True)],
-        [sg.Input(data.get("source", ""), key="-SRC-", size=(38, 1),
-                  text_color=_FG, background_color="#2d2f35",
-                  enable_events=True, pad=((12, 4), (4, 4))),
-         sg.FileBrowse("Browse", file_types=(("Images", "*.jpg *.jpeg *.png *.webp"),),
-                       button_color=_GREY, pad=((0, 12), (4, 4)))],
-        [sg.Image(data=blank_bytes, key="-PREVIEW-", size=(320, 180),
-                  background_color="#111214", pad=((12, 12), (4, 8)))],
-        [_nav(back="Go Back", cancel="Cancel", primary="Continue")],
-    ]
-    w = _open("Input File", layout, 360)
-    if data.get("source") and Path(data["source"]).is_file():
-        _update_preview(w, "-PREVIEW-", data["source"])
-
-    while True:
-        ev, vals = w.read()
-        if ev in (sg.WIN_CLOSED, "Cancel"): w.close(); return "cancel"
-        if ev == "Go Back":                 w.close(); return "back"
-        if ev == "-SRC-":
-            src = vals["-SRC-"].strip()
-            if src and Path(src).is_file():
-                _update_preview(w, "-PREVIEW-", src)
-        if ev == "Continue":
-            src = vals["-SRC-"].strip()
-            if not src or not Path(src).is_file():
-                sg.popup_error("Please select a valid image file.", title="Error")
-                continue
-            data["source"] = src
-            w.close(); return "next"
-
-
-def _step_image_processing(data: dict) -> str:
-    prev = data.get("img_proc", {})
-
-    _ROT_OPTS = ["None (0°)", "90° Clockwise", "180°", "90° Counter-clockwise"]
-    _ROT_VALS = {"None (0°)": 0, "90° Clockwise": 90, "180°": 180, "90° Counter-clockwise": 270}
-    prev_rot    = prev.get("rotate_degrees", 0)
-    rot_default = next((k for k, v in _ROT_VALS.items() if v == prev_rot), "None (0°)")
-
-    _RESIZE_OPTS = ["Original size", "75%", "50%", "25%"]
-    _RESIZE_VALS = {"Original size": 100, "75%": 75, "50%": 50, "25%": 25}
-    prev_resize    = prev.get("resize_pct", 100)
-    resize_default = next((k for k, v in _RESIZE_VALS.items() if v == prev_resize), "Original size")
-
-    _PAD_OPTS = ["5%", "8%", "12%", "15%", "20%", "25%"]
-    _PAD_VALS = {o: int(o[:-1]) / 100 for o in _PAD_OPTS}
-    prev_pad    = prev.get("crop_padding", 0.12)
-    pad_default = next((o for o in _PAD_OPTS if abs(_PAD_VALS[o] - prev_pad) < 0.01), "12%")
-
-    combo_kw = dict(readonly=True, text_color=_FG, background_color="#2d2f35",
-                    button_background_color="#2d2f35", button_arrow_color=_FG,
-                    pad=((4, 12), (2, 4)))
-
-    layout = [
-        [_T("Step 2 of 8  —  Image Processing", bold=True)],
-        [_T("Configure how the source image is isolated and adjusted.", subdued=True)],
-        [sg.Checkbox("Remove background  (rembg BiRefNet)", key="-REMBG-",
-                     default=prev.get("remove_bg", True),
-                     text_color=_FG, background_color=_BG, pad=((16, 0), (8, 2)))],
-        [sg.Checkbox("Auto-crop to subject", key="-CROP-",
-                     default=prev.get("crop_to_subject", True),
-                     text_color=_FG, background_color=_BG, pad=((16, 0), (2, 2)))],
-        [_T("    Crop padding:", subdued=True),
-         sg.Combo(_PAD_OPTS, default_value=pad_default, key="-PAD-", size=(7, 1), **combo_kw)],
-        [_T("Rotation:", subdued=True),
-         sg.Combo(_ROT_OPTS, default_value=rot_default, key="-ROT-", size=(24, 1), **combo_kw)],
-        [_T("Resize:", subdued=True),
-         sg.Combo(_RESIZE_OPTS, default_value=resize_default, key="-RESIZE-", size=(14, 1),
-                  **{**combo_kw, "pad": ((4, 12), (2, 8))})],
-        [_nav(back="Go Back", cancel="Cancel", primary="Continue")],
-    ]
-    w = _open("Image Processing", layout, 310)
-    while True:
-        ev, vals = w.read()
-        if ev in (sg.WIN_CLOSED, "Cancel"): w.close(); return "cancel"
-        if ev == "Go Back":                 w.close(); return "back"
-        if ev == "Continue":
-            data["img_proc"] = {
-                "remove_bg":       vals["-REMBG-"],
-                "crop_to_subject": vals["-CROP-"],
-                "crop_padding":    _PAD_VALS.get(vals["-PAD-"], 0.12),
-                "rotate_degrees":  _ROT_VALS.get(vals["-ROT-"], 0),
-                "resize_pct":      _RESIZE_VALS.get(vals["-RESIZE-"], 100),
-            }
-            w.close(); return "next"
+    return RenderConfig(
+        source        = Path(config["inputPath"]),
+        output_dir    = Path(config["outputDir"]),
+        tagline_cfg   = tag,
+        remove_bg     = bool(ip.get("remove_bg", True)),
+        crop          = bool(ip.get("crop_to_subject", True)),
+        crop_padding  = float(ip.get("crop_padding", 0.12)),
+        rotate        = int(ip.get("rotate_degrees", 0)),
+        resize_pct    = int(ip.get("resize_pct", 100)),
+        add_smoke           = bool(ly.get("add_smoke", True)),
+        add_lightning       = add_lightning,
+        lightning_mode      = lightning_mode if add_lightning else "simple",
+        n_bolts             = int(ly.get("n_bolts", 2)),
+        branch_depth        = int(ly.get("branch_depth", 4)),
+        fork_concentration  = int(ly.get("fork_concentration", 3)),
+        subbranch_length    = float(ly.get("subbranch_length", 0.40)),
+        add_flash           = bool(ly.get("add_flash", True)),
+        add_text      = bool(ly.get("add_text", True)),
+        add_embers    = bool(ly.get("add_embers", False)),
+        add_rain      = bool(ly.get("add_rain", False)),
+        add_vignette  = bool(ly.get("add_vignette", True)),
+        add_scanlines = bool(ly.get("add_scanlines", False)),
+        output_static = bool(config.get("output_static", False)),
+        tone_mode     = ly.get("tone_mode", "color"),
+        stylize_mode  = ly.get("stylize_mode", "none"),
+        add_chroma_aberration = bool(ly.get("add_chroma_aberration", False)),
+        add_bloom             = bool(ly.get("add_bloom", False)),
+        add_film_grain        = bool(ly.get("add_film_grain", False)),
+        add_snow              = bool(ly.get("add_snow", False)),
+        add_holo              = bool(ly.get("add_holo", False)),
+        add_bokeh             = bool(ly.get("add_bokeh", False)),
+        sizes         = selected_sizes,
+    )
 
 
-def _step_output(data: dict) -> str:
-    layout = [
-        [_T("Step 3 of 8  —  Output Folder", bold=True)],
-        [_T("Select where finished GIFs will be saved.", subdued=True)],
-        [sg.Input(data.get("output_dir", ""), key="-OUT-", size=(38, 1),
-                  text_color=_FG, background_color="#2d2f35",
-                  pad=((12, 4), (4, 4))),
-         sg.FolderBrowse("Browse", button_color=_GREY, pad=((0, 12), (4, 4)))],
-        [_nav(back="Go Back", cancel="Cancel", primary="Continue")],
-    ]
-    w = _open("Output Folder", layout, 180)
-    while True:
-        ev, vals = w.read()
-        if ev in (sg.WIN_CLOSED, "Cancel"): w.close(); return "cancel"
-        if ev == "Go Back":                 w.close(); return "back"
-        if ev == "Continue":
-            out = vals["-OUT-"].strip()
-            if not out or not Path(out).is_dir():
-                sg.popup_error("Please select a valid output folder.", title="Error")
-                continue
-            data["output_dir"] = out
-            w.close(); return "next"
+# ---------- pipeline ----------
 
 
-def _step_sizes(data: dict) -> str:
-    prev = data.get("sizes", {})
-    def ck(k): return k in prev or not prev
-    layout = [
-        [_T("Step 4 of 8  —  Output Sizes", bold=True)],
-        [_T("Choose which GIF formats to produce.", subdued=True)],
-        [sg.Checkbox("YouTube Thumbnail  (1280 x 720)", key="-YT-", default=ck("youtube_thumbnail"),
-                     text_color=_FG, background_color=_BG, pad=((16, 0), (4, 2)))],
-        [sg.Checkbox("Channel Art  (2560 x 1440)",      key="-CA-", default=ck("channel_art"),
-                     text_color=_FG, background_color=_BG, pad=((16, 0), (2, 2)))],
-        [sg.Checkbox("Podcast Square  (3000 x 3000)",   key="-PS-", default=ck("podcast_square"),
-                     text_color=_FG, background_color=_BG, pad=((16, 0), (2, 6)))],
-        [sg.Text("─" * 52, text_color="#333438", background_color=_BG,
-                 pad=((12, 12), (4, 4)))],
-        [_T("Output formats:", subdued=True)],
-        [sg.Checkbox("Static PNG  (peak-lightning frame, one per size)", key="-STATIC-",
-                     default=data.get("output_static", False),
-                     text_color=_FG, background_color=_BG, pad=((16, 0), (2, 8)))],
-        [_nav(back="Go Back", cancel="Cancel", primary="Continue")],
-    ]
-    w = _open("Output Sizes", layout, 340)
-    while True:
-        ev, vals = w.read()
-        if ev in (sg.WIN_CLOSED, "Cancel"): w.close(); return "cancel"
-        if ev == "Go Back":                 w.close(); return "back"
-        if ev == "Continue":
-            sizes = {}
-            if vals["-YT-"]: sizes["youtube_thumbnail"] = ALL_SIZES["youtube_thumbnail"]
-            if vals["-CA-"]: sizes["channel_art"]        = ALL_SIZES["channel_art"]
-            if vals["-PS-"]: sizes["podcast_square"]     = ALL_SIZES["podcast_square"]
-            if not sizes:
-                sg.popup_error("Select at least one output size.", title="Error")
-                continue
-            data["sizes"]         = sizes
-            data["output_static"] = vals["-STATIC-"]
-            w.close(); return "next"
 
 
-def _step_layers(data: dict) -> str:
-    prev = data.get("layers", {})
-    def d(k, default=True): return prev.get(k, default)
 
-    combo_kw = dict(readonly=True, text_color=_FG, background_color="#2d2f35",
-                    button_background_color="#2d2f35", button_arrow_color=_FG,
-                    enable_events=True, pad=((4, 12), (2, 4)))
-    sl_kw    = dict(orientation="h", size=(14, 14),
-                    text_color=_FG, background_color=_BG, trough_color="#2d2f35",
-                    pad=((4, 12), (2, 4)))
-
-    # --- Pill toggle state (buttons, not checkboxes) ---
-    _TOG_KEYS = [
-        "SMOKE", "FLASH", "TEXT", "EMBERS", "RAIN", "VIGNETTE", "SCANLINES",
-        "CHROMA", "BLOOM", "FILM_GRAIN", "SNOW", "HOLO", "BOKEH",
-    ]
-    _TOG_DEFAULTS = {
-        "SMOKE":     d("add_smoke",    True),
-        "FLASH":     d("add_flash",    True),
-        "TEXT":      d("add_text",     True),
-        "EMBERS":    d("add_embers",   False),
-        "RAIN":      d("add_rain",     False),
-        "VIGNETTE":  d("add_vignette", True),
-        "SCANLINES": d("add_scanlines", False),
-        "CHROMA":    d("add_chroma_aberration", False),
-        "BLOOM":     d("add_bloom",    False),
-        "FILM_GRAIN":d("add_film_grain", False),
-        "SNOW":      d("add_snow",     False),
-        "HOLO":      d("add_holo",     False),
-        "BOKEH":     d("add_bokeh",    False),
-    }
-    _TOG_LABELS = {
-        "SMOKE":     "Smoke / mist animation",
-        "FLASH":     "Flash  (scene illumination)",
-        "TEXT":      "Gothic text overlay",
-        "EMBERS":    "Embers / sparks",
-        "RAIN":      "Rain / drizzle",
-        "VIGNETTE":  "Vignette",
-        "SCANLINES": "Scan lines  (CRT)",
-        "CHROMA":    "Chromatic aberration  (RGB fringe)",
-        "BLOOM":     "Bloom / glow  (highlight expansion)",
-        "FILM_GRAIN":"Film grain  (per-frame noise)",
-        "SNOW":      "Snow / hail",
-        "HOLO":      "Holographic shimmer  (subject)",
-        "BOKEH":     "Bokeh  (blur background layers)",
-    }
-    tog = dict(_TOG_DEFAULTS)   # mutable state
-
-    def _tk(k): return f"-TOG_{k}-"
-
-    # --- Tone mode combo ---
-    _TONE_MAP = {
-        "Color":          "color",
-        "B&W":            "bw",
-        "Sepia":          "sepia",
-        "Negative":       "negative",
-        "Solarize":       "solarize",
-        "Historical Photo": "historical",
-    }
-    _TONE_INV  = {v: k for k, v in _TONE_MAP.items()}
-    TONE_OPTS  = list(_TONE_MAP.keys())
-    tone_def   = _TONE_INV.get(d("tone_mode", "color"), "Color")
-
-    # --- Stylize mode combo ---
-    _STYLE_MAP = {
-        "None": "none", "Cartoon": "cartoon", "Watercolor": "watercolor",
-        "Oil":  "oil",  "Sketch":  "sketch",
-    }
-    _STYLE_INV = {v: k for k, v in _STYLE_MAP.items()}
-    STYLE_OPTS = list(_STYLE_MAP.keys())
-    style_def  = _STYLE_INV.get(d("stylize_mode", "none"), "None")
-
-    def _trow(key, pad_top=2):
-        return [
-            sg.Button("", key=_tk(key),
-                      image_data=_toggle_img(tog[key]),
-                      border_width=0, button_color=(_BG, _BG),
-                      pad=((12, 8), (pad_top, pad_top))),
-            _T(_TOG_LABELS[key]),
-        ]
-
-    # --- Lightning combo ---
-    _LMODE = {
-        "Off":           "off",
-        "Simple bolt":   "simple",
-        "Ground strike": "ground_strike",
-        "Atmospheric":   "atmospheric",
-        "Full storm":    "full_storm",
-    }
-    _LMODE_INV   = {v: k for k, v in _LMODE.items()}
-    _LDESC       = {
-        "Off":           "",
-        "Simple bolt":   "Single midpoint-displacement bolt with a few side branches.",
-        "Ground strike": "Tall branching channels with ground-contact flash at terminus.",
-        "Atmospheric":   "Intracloud — horizontal radial spreading, no ground contact.",
-        "Full storm":    "Atmospheric discharge combined with ground strikes.",
-    }
-    _LCHAN_LABEL = {
-        "Off": "", "Simple bolt": "",
-        "Ground strike": "Strikes:",
-        "Atmospheric":   "Spines:",
-        "Full storm":    "Strikes:",
-    }
-    LIGHTNING_OPTS = list(_LMODE.keys())
-
-    prev_add_l = d("add_lightning", True)
-    prev_mode  = d("lightning_mode", "simple")
-    l_default  = "Off" if not prev_add_l else _LMODE_INV.get(prev_mode, "Simple bolt")
-    adv_vis    = l_default not in ("Off", "Simple bolt")
-
-    layout = [
-        [_T("Step 5 of 8  —  Animation Layers", bold=True)],
-        [_T("Choose which effects to apply.", subdued=True)],
-        _trow("SMOKE", pad_top=8),
-        _trow("FLASH"),
-        _trow("TEXT"),
-        [_T("Lightning:", subdued=True),
-         sg.Combo(LIGHTNING_OPTS, default_value=l_default, key="-LIGHTNING-",
-                  size=(18, 1), **combo_kw)],
-        [sg.Text(_LDESC.get(l_default, ""), key="-LDESC-", size=(48, 1),
-                 font=("Helvetica", 9), text_color=_FG2,
-                 background_color=_BG, pad=((20, 0), (0, 4)))],
-        [sg.Column([
-            [sg.Text(_LCHAN_LABEL.get(l_default, "Channels:"), key="-CHAN_LBL-",
-                     size=(10, 1), font=("Helvetica", 11), text_color=_FG2,
-                     background_color=_BG, pad=((4, 4), (2, 4))),
-             sg.Slider(range=(1, 6), default_value=d("n_bolts", 2),
-                       key="-NBOLTS-", resolution=1, **sl_kw)],
-            [_T("  Branch depth:", subdued=True),
-             sg.Slider(range=(2, 6), default_value=d("branch_depth", 4),
-                       key="-DEPTH-", resolution=1, **sl_kw)],
-            [_T("  Fork concentration:", subdued=True),
-             sg.Slider(range=(1, 6), default_value=d("fork_concentration", 3),
-                       key="-FORKS-", resolution=1, **sl_kw)],
-            [_T("  Sub-branch length:", subdued=True),
-             sg.Slider(range=(20, 70), default_value=int(d("subbranch_length", 0.40) * 100),
-                       key="-SUBLEN-", resolution=5, **sl_kw),
-             _T("% of parent", subdued=True)],
-        ], key="-ADV-", visible=adv_vis, background_color=_BG, pad=((20, 0), (0, 4)))],
-        [sg.Text("─" * 52, text_color="#333438", background_color=_BG, pad=((12, 12), (4, 4)))],
-        _trow("EMBERS", pad_top=4),
-        _trow("RAIN"),
-        _trow("SNOW"),
-        _trow("VIGNETTE"),
-        _trow("SCANLINES"),
-        [sg.Text("─" * 52, text_color="#333438", background_color=_BG, pad=((12, 12), (4, 4)))],
-        [_T("Tone & Color:", subdued=True),
-         sg.Combo(TONE_OPTS,  default_value=tone_def,  key="-TONE-",  size=(18, 1), **combo_kw)],
-        [_T("Stylize subject:", subdued=True),
-         sg.Combo(STYLE_OPTS, default_value=style_def, key="-STYLE-", size=(18, 1), **combo_kw)],
-        [sg.Text("─" * 52, text_color="#333438", background_color=_BG, pad=((12, 12), (4, 4)))],
-        _trow("CHROMA"),
-        _trow("BLOOM"),
-        _trow("FILM_GRAIN"),
-        _trow("HOLO"),
-        _trow("BOKEH"),
-        [_nav(back="Go Back", cancel="Cancel", primary="Continue")],
-    ]
-    w = _open("Animation Layers", layout, 920)
-    while True:
-        ev, vals = w.read()
-        if ev in (sg.WIN_CLOSED, "Cancel"): w.close(); return "cancel"
-        if ev == "Go Back":                 w.close(); return "back"
-        # Pill toggle clicks
-        for key in _TOG_KEYS:
-            if ev == _tk(key):
-                tog[key] = not tog[key]
-                w[_tk(key)].update(image_data=_toggle_img(tog[key]))
-        # Lightning combo updates
-        if ev == "-LIGHTNING-":
-            lv = vals["-LIGHTNING-"]
-            w["-LDESC-"].update(value=_LDESC.get(lv, ""))
-            w["-CHAN_LBL-"].update(value=_LCHAN_LABEL.get(lv, "Channels:"))
-            w["-ADV-"].update(visible=(lv not in ("Off", "Simple bolt")))
-        if ev == "Continue":
-            lv   = vals["-LIGHTNING-"]
-            mode = _LMODE.get(lv, "simple")
-            data["layers"] = {
-                "add_smoke":          tog["SMOKE"],
-                "add_flash":          tog["FLASH"],
-                "add_text":           tog["TEXT"],
-                "add_embers":         tog["EMBERS"],
-                "add_rain":           tog["RAIN"],
-                "add_snow":           tog["SNOW"],
-                "add_vignette":       tog["VIGNETTE"],
-                "add_scanlines":      tog["SCANLINES"],
-                "add_lightning":      lv != "Off",
-                "lightning_mode":     mode,
-                "n_bolts":            int(vals["-NBOLTS-"]),
-                "branch_depth":       int(vals["-DEPTH-"]),
-                "fork_concentration": int(vals["-FORKS-"]),
-                "subbranch_length":   vals["-SUBLEN-"] / 100.0,
-                # tone & stylize
-                "tone_mode":          _TONE_MAP.get(vals["-TONE-"],  "color"),
-                "stylize_mode":       _STYLE_MAP.get(vals["-STYLE-"], "none"),
-                # optical
-                "add_chroma_aberration": tog["CHROMA"],
-                "add_bloom":             tog["BLOOM"],
-                # per-frame
-                "add_film_grain":        tog["FILM_GRAIN"],
-                "add_holo":              tog["HOLO"],
-                "add_bokeh":             tog["BOKEH"],
-            }
-            w.close(); return "next"
-
-
-def _step_tagline(data: dict) -> str:
-    prev   = data.get("tagline_cfg", {})
-    ck     = dict(text_color=_FG, background_color=_BG)
-    sl_kw  = dict(orientation="h", size=(14, 14),
-                  text_color=_FG, background_color=_BG, trough_color="#2d2f35",
-                  pad=((4, 12), (2, 4)))
-    c_kw   = dict(readonly=True, text_color=_FG, background_color="#2d2f35",
-                  button_background_color="#2d2f35", button_arrow_color=_FG,
-                  pad=((4, 12), (2, 4)))
-
-    ANCHOR_OPTS = ["Top", "Center", "Bottom"]
-    ORIENT_OPTS = ["Horizontal", "Vertical ↻"]
-    _anchor_map = {"top": "Top", "center": "Center", "bottom": "Bottom"}
-    _orient_map = {"horizontal": "Horizontal", "vertical_cw": "Vertical ↻"}
-
-    prev_text   = prev.get("text",   data.get("tagline", "Thunder Road Rails"))
-    prev_anchor = _anchor_map.get(prev.get("anchor", "center"), "Center")
-    prev_orient = _orient_map.get(prev.get("orientation", "horizontal"), "Horizontal")
-    prev_align  = prev.get("align", "center")
-    prev_offset = int(prev.get("offset_y", 0.0) * 100)
-    prev_size   = max(2, min(20, int(prev.get("font_size_pct", 0.075) * 100)))
-    prev_color  = prev.get("text_color", (220, 190, 120))
-    prev_hex    = _rgb_to_hex(prev_color)
-    typo_open   = data.get("_typo_open", False)
-
-    swatch_data = _color_swatch(prev_color)
-
-    # Segmented control state for alignment
-    _ALIGN_OPTS = ["Left", "Center", "Right"]
-    align_state = [prev_align]   # single-item list so the inner loop can mutate it
-    def _akey(al): return f"-AL_{al.upper()}-"
-
-    # Toggle state for shadow / glow
-    typo_tog = {"SHADOW": prev.get("shadow", True), "GLOW": prev.get("glow", True)}
-    def _ttk(k): return f"-TYPO_TOG_{k}-"
-
-    layout = [
-        [_T("Step 6 of 8  —  Tagline & Typography", bold=True)],
-        [_T("Enter the text to display on the image.", subdued=True)],
-        [sg.Input(prev_text, key="-TAG-", size=(44, 1),
-                  text_color=_FG, background_color="#2d2f35",
-                  pad=((12, 12), (4, 4)))],
-        [sg.Button("▸ Typography", key="-TYPO-", border_width=0,
-                   button_color=(_FG2, _BG), font=("Helvetica", 10),
-                   pad=((12, 0), (2, 4)))],
-        [sg.Column([
-            [_T("  Placement:", subdued=True),
-             sg.Combo(ANCHOR_OPTS, default_value=prev_anchor, key="-ANCHOR-",
-                      size=(9, 1), **c_kw),
-             _T("Y offset:", subdued=True),
-             sg.Slider(range=(-30, 30), default_value=prev_offset,
-                       key="-OFFSET-", resolution=1, **sl_kw)],
-            [_T("  Font size:", subdued=True),
-             sg.Slider(range=(2, 20), default_value=prev_size,
-                       key="-FSIZE-", resolution=1, **sl_kw),
-             _T("% of height", subdued=True)],
-            # Segmented control — alignment
-            [_T("  Alignment:", subdued=True),
-             *[sg.Button("", key=_akey(al),
-                         image_data=_seg_img(al, al.lower() == align_state[0]),
-                         border_width=0, button_color=(_BG, _BG),
-                         pad=((2, 2), (2, 2)))
-               for al in _ALIGN_OPTS]],
-            [_T("  Orientation:", subdued=True),
-             sg.Combo(ORIENT_OPTS, default_value=prev_orient, key="-ORIENT-",
-                      size=(14, 1), **c_kw)],
-            [_T("  Text color:", subdued=True),
-             sg.Input(prev_hex, key="-COLOR-", size=(9, 1),
-                      text_color=_FG, background_color="#2d2f35",
-                      pad=((4, 4), (2, 2)), enable_events=True),
-             sg.Button("", key="-SWATCH-", image_data=swatch_data,
-                       border_width=0, button_color=(_BG, _BG),
-                       pad=((0, 0), (2, 2)))],
-            # Pill toggles — shadow / glow
-            [sg.Button("", key=_ttk("SHADOW"),
-                       image_data=_toggle_img(typo_tog["SHADOW"]),
-                       border_width=0, button_color=(_BG, _BG),
-                       pad=((20, 6), (2, 2))),
-             _T("Drop shadow"),
-             sg.Button("", key=_ttk("GLOW"),
-                       image_data=_toggle_img(typo_tog["GLOW"]),
-                       border_width=0, button_color=(_BG, _BG),
-                       pad=((16, 6), (2, 2))),
-             _T("Amber glow")],
-        ], key="-TYPO_COL-", visible=typo_open,
-           background_color=_BG, pad=((0, 0), (0, 4)))],
-        [_nav(back="Go Back", cancel="Cancel", primary="Continue")],
-    ]
-    w = _open("Tagline & Typography", layout, 520)
-    while True:
-        ev, vals = w.read()
-        if ev in (sg.WIN_CLOSED, "Cancel"): w.close(); return "cancel"
-        if ev == "Go Back":                 w.close(); return "back"
-        if ev == "-TYPO-":
-            new_vis = not w["-TYPO_COL-"].visible
-            w["-TYPO_COL-"].update(visible=new_vis)
-            data["_typo_open"] = new_vis
-        if ev == "-COLOR-":
-            rgb = _hex_to_rgb(vals["-COLOR-"])
-            w["-SWATCH-"].update(image_data=_color_swatch(rgb))
-        # Segmented alignment clicks
-        for al in _ALIGN_OPTS:
-            if ev == _akey(al):
-                align_state[0] = al.lower()
-                for a2 in _ALIGN_OPTS:
-                    w[_akey(a2)].update(
-                        image_data=_seg_img(a2, a2.lower() == align_state[0]))
-        # Pill toggles — shadow / glow
-        for tkey in ("SHADOW", "GLOW"):
-            if ev == _ttk(tkey):
-                typo_tog[tkey] = not typo_tog[tkey]
-                w[_ttk(tkey)].update(image_data=_toggle_img(typo_tog[tkey]))
-        if ev == "Continue":
-            tag_text = vals["-TAG-"].strip()
-            if not tag_text:
-                sg.popup_error("Tagline cannot be empty.", title="Error")
-                continue
-            orient_val = ("vertical_cw" if vals["-ORIENT-"] == "Vertical ↻"
-                          else "horizontal")
-            data["tagline_cfg"] = {
-                "text":          tag_text,
-                "anchor":        vals["-ANCHOR-"].lower(),
-                "offset_y":      vals["-OFFSET-"] / 100.0,
-                "font_size_pct": vals["-FSIZE-"] / 100.0,
-                "align":         align_state[0],
-                "orientation":   orient_val,
-                "text_color":    _hex_to_rgb(vals["-COLOR-"]),
-                "shadow":        typo_tog["SHADOW"],
-                "glow":          typo_tog["GLOW"],
-            }
-            data["tagline"] = tag_text
-            w.close(); return "next"
-
-
-def _step_confirm(data: dict) -> str:
-    layers   = data.get("layers", {})
-    img_proc = data.get("img_proc", {})
-    tag_d    = data.get("tagline_cfg", {})
-
-    size_labels = {
-        "youtube_thumbnail": "YouTube Thumbnail  (1280 x 720)",
-        "channel_art":       "Channel Art        (2560 x 1440)",
-        "podcast_square":    "Podcast Square     (3000 x 3000)",
-    }
-    assets_str = "\n".join(f"  {size_labels[k]}" for k in data.get("sizes", {}))
-
-    proc_lines = []
-    if img_proc.get("remove_bg", True):
-        proc_lines.append("  Background removal (rembg BiRefNet)")
-    if img_proc.get("crop_to_subject", True):
-        pad_pct = int(img_proc.get("crop_padding", 0.12) * 100)
-        proc_lines.append(f"  Auto-crop  (padding {pad_pct}%)")
-    rot = img_proc.get("rotate_degrees", 0)
-    if rot:
-        proc_lines.append(f"  Rotate {rot}°")
-    rsz = img_proc.get("resize_pct", 100)
-    if rsz != 100:
-        proc_lines.append(f"  Resize to {rsz}%")
-    proc_str = "\n".join(proc_lines) or "  (none)"
-
-    _MODE_LABEL = {
-        "simple":       "Simple bolt",
-        "ground_strike": "Ground strike",
-        "atmospheric":  "Atmospheric",
-        "full_storm":   "Full storm",
-    }
-    layer_lines = []
-    if layers.get("add_smoke"):     layer_lines.append("  Smoke / mist animation")
-    if layers.get("add_lightning"):
-        mode  = layers.get("lightning_mode", "simple")
-        label = _MODE_LABEL.get(mode, mode)
-        if mode == "simple":
-            layer_lines.append(f"  Lightning  ({label})")
-        else:
-            nb  = layers.get("n_bolts", 2)
-            bd  = layers.get("branch_depth", 4)
-            fk  = layers.get("fork_concentration", 3)
-            sl  = int(layers.get("subbranch_length", 0.40) * 100)
-            layer_lines.append(
-                f"  Lightning  ({label}, channels {nb}, depth {bd}, "
-                f"forks {fk}, length {sl}%)"
-            )
-    if layers.get("add_flash"):     layer_lines.append("  Flash  (scene illumination)")
-    if layers.get("add_text"):
-        tag_text = tag_d.get("text", data.get("tagline", ""))
-        layer_lines.append(f'  Gothic text  --  "{tag_text}"')
-    if layers.get("add_embers"):    layer_lines.append("  Embers / sparks")
-    if layers.get("add_rain"):      layer_lines.append("  Rain / drizzle")
-    if layers.get("add_snow"):      layer_lines.append("  Snow / hail")
-    if layers.get("add_vignette"):  layer_lines.append("  Vignette")
-    if layers.get("add_scanlines"): layer_lines.append("  Scan lines  (CRT)")
-    _tone_label = {"bw":"B&W","sepia":"Sepia","negative":"Negative",
-                   "solarize":"Solarize","historical":"Historical Photo"}
-    tm = layers.get("tone_mode", "color")
-    if tm != "color":
-        layer_lines.append(f"  Tone: {_tone_label.get(tm, tm)}")
-    sm = layers.get("stylize_mode", "none")
-    if sm != "none":
-        layer_lines.append(f"  Stylize subject: {sm.capitalize()}")
-    if layers.get("add_chroma_aberration"): layer_lines.append("  Chromatic aberration")
-    if layers.get("add_bloom"):             layer_lines.append("  Bloom / glow")
-    if layers.get("add_film_grain"):        layer_lines.append("  Film grain")
-    if layers.get("add_holo"):              layer_lines.append("  Holographic shimmer")
-    if layers.get("add_bokeh"):             layer_lines.append("  Bokeh  (background blur)")
-    layers_str = "\n".join(layer_lines) or "  (none)"
-
-    typo_lines = []
-    if tag_d:
-        anchor = tag_d.get("anchor", "center")
-        off_pct = int(tag_d.get("offset_y", 0.0) * 100)
-        size_pct = int(tag_d.get("font_size_pct", 0.075) * 100)
-        align   = tag_d.get("align", "center")
-        orient  = tag_d.get("orientation", "horizontal")
-        color   = _rgb_to_hex(tag_d.get("text_color", (220, 190, 120)))
-        typo_lines = [
-            f"  Placement: {anchor}  offset {off_pct:+d}%",
-            f"  Font size: {size_pct}% height  |  Align: {align}  |  Orientation: {orient}",
-            f"  Color: {color}",
-        ]
-    typo_str = "\n".join(typo_lines) or "  (default)"
-
-    summary = "\n".join([
-        f"Source:        {data.get('source')}",
-        f"Output folder: {data.get('output_dir')}",
-        "",
-        "Image processing:",
-        proc_str,
-        "",
-        "Asset sizes:",
-        assets_str,
-        "",
-        "Animation layers:",
-        layers_str,
-        "",
-        "Tagline typography:",
-        typo_str,
-        "",
-        f"GIFs to produce: {len(data.get('sizes', {}))}",
-        "Static PNG per size: yes" if data.get("output_static") else "",
-    ])
-
-    layout = [
-        [_T("Step 7 of 8  —  Confirm your selections", bold=True)],
-        [sg.Multiline(summary, size=(60, 20), disabled=True,
-                      background_color="#111214", text_color=_FG,
-                      font=("Courier", 10), no_scrollbar=True,
-                      pad=((12, 12), (4, 8)))],
-        [_nav(back="Go Back", cancel="Cancel", primary="Run")],
-    ]
-    w = _open("Confirm", layout, 520)
-    while True:
-        ev, _ = w.read()
-        if ev in (sg.WIN_CLOSED, "Cancel"): w.close(); return "cancel"
-        if ev == "Go Back":                 w.close(); return "back"
-        if ev == "Run":                     w.close(); return "run"
-
-
-# ---------- main wizard loop ----------
-
-def run_gui() -> "RenderConfig | None":
-    data: dict = {}
-    step = 0
-
-    while True:
-        if step == 0:
-            r = _step_welcome()
-            if r == "cancel": return None
-            step = 1
-
-        elif step == 1:
-            r = _step_source(data)
-            if r == "cancel": return None
-            step = 0 if r == "back" else 2
-
-        elif step == 2:
-            r = _step_image_processing(data)
-            if r == "cancel": return None
-            step = 1 if r == "back" else 3
-
-        elif step == 3:
-            r = _step_output(data)
-            if r == "cancel": return None
-            step = 2 if r == "back" else 4
-
-        elif step == 4:
-            r = _step_sizes(data)
-            if r == "cancel": return None
-            step = 3 if r == "back" else 5
-
-        elif step == 5:
-            r = _step_layers(data)
-            if r == "cancel": return None
-            step = 4 if r == "back" else 6
-
-        elif step == 6:
-            if data.get("layers", {}).get("add_text", True):
-                r = _step_tagline(data)
-                if r == "cancel": return None
-                step = 5 if r == "back" else 7
-            else:
-                data["tagline_cfg"] = {"text": "", "anchor": "center", "offset_y": 0.0,
-                                       "font_size_pct": 0.075, "align": "center",
-                                       "orientation": "horizontal",
-                                       "text_color": (220, 190, 120),
-                                       "shadow": True, "glow": True}
-                step = 7
-
-        elif step == 7:
-            r = _step_confirm(data)
-            if r == "cancel": return None
-            if r == "back":
-                step = 6 if data.get("layers", {}).get("add_text") else 5
-                continue
-            # r == "run" — build RenderConfig
-            ip  = data.get("img_proc", {})
-            ly  = data.get("layers", {})
-            td  = data.get("tagline_cfg", {})
-            tag = TaglineConfig(
-                text          = td.get("text", "Thunder Road Rails"),
-                anchor        = td.get("anchor", "center"),
-                offset_y      = td.get("offset_y", 0.0),
-                font_size_pct = td.get("font_size_pct", 0.075),
-                align         = td.get("align", "center"),
-                orientation   = td.get("orientation", "horizontal"),
-                text_color    = tuple(td.get("text_color", (220, 190, 120))),
-                shadow        = td.get("shadow", True),
-                glow          = td.get("glow", True),
-            )
-            return RenderConfig(
-                source        = Path(data["source"]),
-                output_dir    = Path(data["output_dir"]),
-                tagline_cfg   = tag,
-                remove_bg     = ip.get("remove_bg", True),
-                crop          = ip.get("crop_to_subject", True),
-                crop_padding  = ip.get("crop_padding", 0.12),
-                rotate        = ip.get("rotate_degrees", 0),
-                resize_pct    = ip.get("resize_pct", 100),
-                add_smoke           = ly.get("add_smoke", True),
-                add_lightning       = ly.get("add_lightning", True),
-                lightning_mode      = ly.get("lightning_mode", "simple"),
-                n_bolts             = ly.get("n_bolts", 2),
-                branch_depth        = ly.get("branch_depth", 4),
-                fork_concentration  = ly.get("fork_concentration", 3),
-                subbranch_length    = ly.get("subbranch_length", 0.40),
-                add_flash           = ly.get("add_flash", True),
-                add_text      = ly.get("add_text", True),
-                add_embers    = ly.get("add_embers", False),
-                add_rain      = ly.get("add_rain", False),
-                add_vignette  = ly.get("add_vignette", True),
-                add_scanlines = ly.get("add_scanlines", False),
-                output_static = data.get("output_static", False),
-                tone_mode     = ly.get("tone_mode",    "color"),
-                stylize_mode  = ly.get("stylize_mode", "none"),
-                add_chroma_aberration = ly.get("add_chroma_aberration", False),
-                add_bloom             = ly.get("add_bloom",             False),
-                add_film_grain        = ly.get("add_film_grain",        False),
-                add_snow              = ly.get("add_snow",              False),
-                add_holo              = ly.get("add_holo",              False),
-                add_bokeh             = ly.get("add_bokeh",             False),
-                sizes         = data["sizes"],
-            )
 
 
 # ---------------------------------------------------------------------------
@@ -2271,27 +1523,44 @@ def generate_size(
 # Pipeline + entry point
 # ---------------------------------------------------------------------------
 
-def run_pipeline(cfg: RenderConfig) -> None:
+def run_pipeline(cfg: RenderConfig, progress_cb=None) -> None:
+    def _prog(n):
+        if progress_cb:
+            progress_cb(n)
+
     print("\nBrand Image Generator")
     print("=" * 40)
+    _prog(5)
 
     lantern_raw = isolate_lantern(cfg)
     lantern     = apply_image_processing(lantern_raw, cfg)
     print(f"Subject isolated: {lantern.width}×{lantern.height}px\n")
+    _prog(20)
 
-    for size_name, size in cfg.sizes.items():
+    n_sizes = len(cfg.sizes)
+    for i, (size_name, size) in enumerate(cfg.sizes.items()):
         generate_size(size_name, size, lantern, cfg)
         print()
+        _prog(20 + int(80 * (i + 1) / n_sizes))
 
     print("All done. Files written to:", cfg.output_dir)
 
 
 def main() -> None:
-    cfg = run_gui()
-    if cfg is None:
-        print("Cancelled.")
-        return
-    run_pipeline(cfg)
+    global _window
+    api  = Api()
+    here = Path(__file__).parent
+    html = (here / "wizard.html").read_text(encoding="utf-8")
+    _window = webview.create_window(
+        "Brand Image Generator",
+        html=html,
+        js_api=api,
+        width=620,
+        height=800,
+        resizable=False,
+        background_color="#1c1e23",
+    )
+    webview.start()
 
 
 if __name__ == "__main__":
