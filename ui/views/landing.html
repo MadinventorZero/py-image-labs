@@ -1,0 +1,18 @@
+<section id="step-landing">
+  <div class="welcome-center">
+    <div class="welcome-h">Brand Image Generator</div>
+    <div class="welcome-p">
+      Create animated GIF brand assets from a single photo.<br><br>
+      Walk through a few quick steps to configure your render.
+    </div>
+    <button class="btn btn-primary" id="btn-start" style="margin-top:28px;">Get Started</button>
+  </div>
+</section>
+
+<script>
+window.onViewLoad = function({ state }) {
+  document.getElementById('btn-start').addEventListener('click', () => {
+    Wizard.startNewRender();
+  });
+};
+</script>

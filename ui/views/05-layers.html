@@ -1,0 +1,208 @@
+<section id="step-layers">
+  <div class="step-title">Step 5 of 7 — Animation Layers</div>
+  <div class="step-sub">Choose which effects to apply.</div>
+
+  <div class="tog-row" id="row-smoke">
+    <div class="tog-track" id="tog-smoke"><div class="tog-thumb"></div></div>
+    <span class="tog-label">Smoke / mist animation</span>
+  </div>
+  <div class="tog-row" id="row-flash">
+    <div class="tog-track" id="tog-flash"><div class="tog-thumb"></div></div>
+    <span class="tog-label">Flash <span class="muted">(scene illumination)</span></span>
+  </div>
+  <div class="tog-row" id="row-text">
+    <div class="tog-track" id="tog-text"><div class="tog-thumb"></div></div>
+    <span class="tog-label">Gothic text overlay</span>
+  </div>
+  <div class="skip-hint" id="tagline-skip-hint">Tagline step will be skipped</div>
+
+  <!-- Lightning -->
+  <div class="field-row" style="margin-top:6px;">
+    <span class="field-label">Lightning</span>
+    <select id="sel-lightning">
+      <option value="off">Off</option>
+      <option value="simple">Simple bolt</option>
+      <option value="ground_strike">Ground strike</option>
+      <option value="atmospheric">Atmospheric</option>
+      <option value="full_storm">Full storm</option>
+    </select>
+  </div>
+  <div class="l-desc" id="l-desc"></div>
+  <div class="adv-block" id="adv-block">
+    <div class="range-row">
+      <span class="field-label" id="lbl-bolts">Strikes:</span>
+      <input type="range" min="1" max="6" step="1" id="range-bolts">
+      <span class="range-val" id="val-bolts"></span>
+    </div>
+    <div class="range-row">
+      <span class="field-label">Branch depth:</span>
+      <input type="range" min="2" max="6" step="1" id="range-depth">
+      <span class="range-val" id="val-depth"></span>
+    </div>
+    <div class="range-row">
+      <span class="field-label">Fork concentration:</span>
+      <input type="range" min="1" max="6" step="1" id="range-fork">
+      <span class="range-val" id="val-fork"></span>
+    </div>
+    <div class="range-row">
+      <span class="field-label">Sub-branch length:</span>
+      <input type="range" min="20" max="70" step="5" id="range-sub">
+      <span class="range-val" id="val-sub"></span>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="tog-row" id="row-embers">
+    <div class="tog-track" id="tog-embers"><div class="tog-thumb"></div></div>
+    <span class="tog-label">Embers / sparks</span>
+  </div>
+  <div class="tog-row" id="row-rain">
+    <div class="tog-track" id="tog-rain"><div class="tog-thumb"></div></div>
+    <span class="tog-label">Rain / drizzle</span>
+  </div>
+  <div class="tog-row" id="row-snow">
+    <div class="tog-track" id="tog-snow"><div class="tog-thumb"></div></div>
+    <span class="tog-label">Snow / hail</span>
+  </div>
+  <div class="tog-row" id="row-vignette">
+    <div class="tog-track" id="tog-vignette"><div class="tog-thumb"></div></div>
+    <span class="tog-label">Vignette</span>
+  </div>
+  <div class="tog-row" id="row-scanlines">
+    <div class="tog-track" id="tog-scanlines"><div class="tog-thumb"></div></div>
+    <span class="tog-label">Scan lines <span class="muted">(CRT)</span></span>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="field-row">
+    <span class="field-label">Tone &amp; Color</span>
+    <select id="sel-tone">
+      <option value="color">Color</option>
+      <option value="bw">B&amp;W</option>
+      <option value="sepia">Sepia</option>
+      <option value="negative">Negative</option>
+      <option value="solarize">Solarize</option>
+      <option value="historical">Historical Photo</option>
+    </select>
+  </div>
+  <div class="field-row">
+    <span class="field-label">Stylize subject</span>
+    <select id="sel-stylize">
+      <option value="none">None</option>
+      <option value="cartoon">Cartoon</option>
+      <option value="watercolor">Watercolor</option>
+      <option value="oil">Oil</option>
+      <option value="sketch">Sketch</option>
+    </select>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="tog-row" id="row-chroma">
+    <div class="tog-track" id="tog-chroma"><div class="tog-thumb"></div></div>
+    <span class="tog-label">Chromatic aberration <span class="muted">(RGB fringe)</span></span>
+  </div>
+  <div class="tog-row" id="row-bloom">
+    <div class="tog-track" id="tog-bloom"><div class="tog-thumb"></div></div>
+    <span class="tog-label">Bloom / glow <span class="muted">(highlight expansion)</span></span>
+  </div>
+  <div class="tog-row" id="row-grain">
+    <div class="tog-track" id="tog-grain"><div class="tog-thumb"></div></div>
+    <span class="tog-label">Film grain <span class="muted">(per-frame noise)</span></span>
+  </div>
+  <div class="tog-row" id="row-holo">
+    <div class="tog-track" id="tog-holo"><div class="tog-thumb"></div></div>
+    <span class="tog-label">Holographic shimmer <span class="muted">(subject)</span></span>
+  </div>
+  <div class="tog-row" id="row-bokeh">
+    <div class="tog-track" id="tog-bokeh"><div class="tog-thumb"></div></div>
+    <span class="tog-label">Bokeh <span class="muted">(blur background layers)</span></span>
+  </div>
+</section>
+
+<script>
+window.onViewLoad = function({ state }) {
+  const L = state.config.layers;
+
+  function bindToggle(trackId, key) {
+    const track = document.getElementById(trackId);
+    const sync  = () => track.classList.toggle('on', L[key]);
+    sync();
+    track.closest('.tog-row').addEventListener('click', () => {
+      L[key] = !L[key];
+      sync();
+      if (key === 'add_text') updateTaglineSkip();
+    });
+  }
+
+  bindToggle('tog-smoke',     'add_smoke');
+  bindToggle('tog-flash',     'add_flash');
+  bindToggle('tog-text',      'add_text');
+  bindToggle('tog-embers',    'add_embers');
+  bindToggle('tog-rain',      'add_rain');
+  bindToggle('tog-snow',      'add_snow');
+  bindToggle('tog-vignette',  'add_vignette');
+  bindToggle('tog-scanlines', 'add_scanlines');
+  bindToggle('tog-chroma',    'add_chroma_aberration');
+  bindToggle('tog-bloom',     'add_bloom');
+  bindToggle('tog-grain',     'add_film_grain');
+  bindToggle('tog-holo',      'add_holo');
+  bindToggle('tog-bokeh',     'add_bokeh');
+
+  function bindRange(id, key, displayId) {
+    const input = document.getElementById(id);
+    input.value = L[key];
+    document.getElementById(displayId).textContent = input.value;
+    input.addEventListener('input', () => {
+      L[key] = parseFloat(input.value);
+      document.getElementById(displayId).textContent = input.value;
+    });
+  }
+
+  bindRange('range-bolts', 'n_bolts',           'val-bolts');
+  bindRange('range-depth', 'branch_depth',       'val-depth');
+  bindRange('range-fork',  'fork_concentration', 'val-fork');
+  bindRange('range-sub',   'subbranch_pct',      'val-sub');
+
+  const lSel = document.getElementById('sel-lightning');
+  lSel.value = L.lightning_mode;
+  lSel.addEventListener('change', () => {
+    L.lightning_mode = lSel.value;
+    syncLightningAdvanced();
+  });
+
+  const selTone    = document.getElementById('sel-tone');
+  const selStylize = document.getElementById('sel-stylize');
+  selTone.value    = L.tone_mode;
+  selStylize.value = L.stylize_mode;
+  selTone.addEventListener('change',    e => { L.tone_mode    = e.target.value; });
+  selStylize.addEventListener('change', e => { L.stylize_mode = e.target.value; });
+
+  const LIGHTNING_DESCS = {
+    simple:        'Single midpoint-displacement bolt with a few side branches.',
+    ground_strike: 'Tall branching channels with ground-contact flash at terminus.',
+    atmospheric:   'Intracloud — horizontal radial spreading, no ground contact.',
+    full_storm:    'Atmospheric discharge combined with ground strikes.',
+  };
+
+  const BOLT_LABELS = {
+    ground_strike: 'Strikes:', atmospheric: 'Spines:', full_storm: 'Strikes:',
+  };
+
+  function syncLightningAdvanced() {
+    const adv = !['off', 'simple'].includes(L.lightning_mode);
+    document.getElementById('adv-block').hidden = !adv;
+    document.getElementById('l-desc').textContent = LIGHTNING_DESCS[L.lightning_mode] || '';
+    document.getElementById('lbl-bolts').textContent = BOLT_LABELS[L.lightning_mode] || 'Channels:';
+  }
+
+  function updateTaglineSkip() {
+    document.getElementById('tagline-skip-hint').hidden = L.add_text;
+  }
+
+  syncLightningAdvanced();
+  updateTaglineSkip();
+};
+</script>

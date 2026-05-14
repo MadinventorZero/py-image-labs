@@ -1,0 +1,27 @@
+<section id="step-output">
+  <div class="step-title">Step 3 of 7 — Output Folder</div>
+  <div class="step-sub">Select where finished GIFs will be saved.</div>
+  <div class="field-row">
+    <input type="text" class="input-path" id="dir-display" readonly placeholder="No folder selected">
+    <button class="btn-browse" id="btn-browse-dir">Browse…</button>
+  </div>
+</section>
+
+<script>
+window.onViewLoad = function({ state }) {
+  const update = () => Wizard.setBlocked(!state.config.outputDir);
+  update();
+
+  if (state.config.outputDir) {
+    document.getElementById('dir-display').value = state.config.outputDir;
+  }
+
+  document.getElementById('btn-browse-dir').addEventListener('click', async () => {
+    const path = await Api.pickOutputDir();
+    if (!path) return;
+    state.config.outputDir = path;
+    document.getElementById('dir-display').value = path;
+    update();
+  });
+};
+</script>

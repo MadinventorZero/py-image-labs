@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Brand Image Generator — UI Smoke Tests</title>
+  <style>
+    body { font-family: monospace; background: #1c1e23; color: #cccdcf; margin: 0; padding: 20px; }
+    h1   { font-size: 14px; color: #aaa; margin-bottom: 16px; }
+    #results { margin-top: 16px; }
+    .pass { color: #34c759; }
+    .fail { color: #e74c3c; }
+    .pending { color: #888; }
+    .result { padding: 4px 0; font-size: 12px; }
+    #app-frame { display: none; }
+    #run-btn {
+      background: #1a6b3a; color: white; border: none; border-radius: 6px;
+      padding: 8px 20px; font-family: monospace; font-size: 12px; cursor: pointer;
+    }
+    #run-btn:hover { opacity: 0.85; }
+    #summary { margin-top: 12px; font-size: 11px; color: #888; }
+  </style>
+</head>
+<body>
+  <h1>Brand Image Generator — UI Smoke Tests</h1>
+  <p style="font-size:11px; color:#888; margin-bottom:12px;">
+    Open from repo root: <code>open tests/ui/smoke.html</code><br>
+    Must be served from the <code>ui/</code> parent so view fetches resolve.
+  </p>
+  <button id="run-btn">Run All Tests</button>
+  <div id="results"></div>
+  <div id="summary"></div>
+
+  <!-- Hidden app frame — wizard runs here -->
+  <div id="app" style="display:none;">
+    <header id="app-header">
+      <span id="app-title">Test Frame</span>
+      <nav id="wizard-nav"></nav>
+    </header>
+    <main id="wizard-content"></main>
+    <footer id="app-footer">
+      <div id="wizard-controls" hidden>
+        <button id="btn-back" class="btn btn-secondary" hidden>Back</button>
+        <div class="spacer"></div>
+        <button id="btn-next" class="btn btn-primary">Next</button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Load app JS (relative to ui/ root — serve from there) -->
+  <script src="../../ui/js/api.js"></script>
+  <script src="../../ui/js/wizard.js"></script>
+
+  <!-- Inject mock and test cases -->
+  <script src="cases/api-mock.js"></script>
+  <script src="cases/wizard-nav.js"></script>
+  <script src="cases/render-flow.js"></script>
+
+  <script>
+    const ALL_TESTS = [...WizardNavTests, ...RenderFlowTests];
+    const results   = document.getElementById('results');
+    const summary   = document.getElementById('summary');
+
+    function assert(cond, msg) {
+      if (!cond) throw new Error(msg || 'Assertion failed');
+    }
+
+    async function runAll() {
+      results.innerHTML = '';
+      summary.textContent = '';
+      let passed = 0, failed = 0;
+
+      for (const t of ALL_TESTS) {
+        const el = document.createElement('div');
+        el.className = 'result pending';
+        el.textContent = `  [ … ]  ${t.id}: ${t.name}`;
+        results.appendChild(el);
+
+        try {
+          await t.run();
+          el.className = 'result pass';
+          el.textContent = `  [ ✓ ]  ${t.id}: ${t.name}`;
+          passed++;
+        } catch (e) {
+          el.className = 'result fail';
+          el.textContent = `  [ ✗ ]  ${t.id}: ${t.name} — ${e.message}`;
+          failed++;
+        }
+      }
+
+      summary.textContent = `${passed} passed, ${failed} failed of ${ALL_TESTS.length} tests.`;
+    }
+
+    document.getElementById('run-btn').addEventListener('click', runAll);
+
+    // Make assert available to test files
+    window.assert = assert;
+  </script>
+</body>
+</html>

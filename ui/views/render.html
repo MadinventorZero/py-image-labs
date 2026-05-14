@@ -1,0 +1,68 @@
+<section id="step-render">
+  <div class="step-title">Rendering…</div>
+  <div class="step-sub">Your animated GIFs are being generated.</div>
+
+  <div class="prog-wrap">
+    <div class="prog-track">
+      <div class="prog-fill" id="prog-fill" style="width:0%"></div>
+    </div>
+    <div class="prog-label" id="prog-label">Starting…</div>
+  </div>
+
+  <div class="error-box" id="error-box" hidden></div>
+
+  <div class="gif-preview" id="gif-preview" hidden>
+    <img id="gif-img" alt="Output preview">
+  </div>
+
+  <div class="info-box" id="done-box" hidden>
+    Render complete. Files written to output folder.
+  </div>
+
+  <div style="display:flex; gap:8px; padding:12px 20px;" id="post-render-btns" hidden>
+    <button class="btn btn-primary"   id="btn-new-render">New Render</button>
+    <button class="btn btn-secondary" id="btn-back-settings">Change Settings</button>
+  </div>
+</section>
+
+<script>
+window.onViewLoad = async function({ state }) {
+  const progFill  = document.getElementById('prog-fill');
+  const progLabel = document.getElementById('prog-label');
+  const gifWrap   = document.getElementById('gif-preview');
+  const gifImg    = document.getElementById('gif-img');
+  const errorBox  = document.getElementById('error-box');
+  const doneBox   = document.getElementById('done-box');
+  const postBtns  = document.getElementById('post-render-btns');
+
+  document.getElementById('btn-new-render').addEventListener('click',    () => Wizard.newRender());
+  document.getElementById('btn-back-settings').addEventListener('click', () => Wizard.enterWizard(2, 0));
+
+  async function poll() {
+    const s = await Api.getProgress();
+    const pct = Math.round(s.progress || 0);
+    progFill.style.width  = pct + '%';
+
+    if (s.done) {
+      if (s.error) {
+        progLabel.textContent = 'Error.';
+        errorBox.textContent  = s.error;
+        errorBox.hidden = false;
+      } else {
+        progLabel.textContent = 'Done.';
+        doneBox.hidden = false;
+        if (s.gif_b64) {
+          gifImg.src     = 'data:image/jpeg;base64,' + s.gif_b64;
+          gifWrap.hidden = false;
+        }
+      }
+      postBtns.hidden = false;
+    } else {
+      progLabel.textContent = 'Rendering… ' + pct + '%';
+      setTimeout(poll, 500);
+    }
+  }
+
+  await poll();
+};
+</script>

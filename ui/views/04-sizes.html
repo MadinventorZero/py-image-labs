@@ -1,0 +1,51 @@
+<section id="step-sizes">
+  <div class="step-title">Step 4 of 7 — Output Sizes</div>
+  <div class="step-sub">Choose which GIF formats to produce.</div>
+
+  <label class="check-row">
+    <input type="checkbox" id="cb-yt">
+    <span>YouTube Thumbnail <span class="muted">1280 × 720</span></span>
+  </label>
+  <label class="check-row">
+    <input type="checkbox" id="cb-ca">
+    <span>Channel Art <span class="muted">2560 × 1440</span></span>
+  </label>
+  <label class="check-row">
+    <input type="checkbox" id="cb-ps">
+    <span>Podcast Square <span class="muted">3000 × 3000</span></span>
+  </label>
+  <div class="divider"></div>
+  <div class="sec-label">Output formats</div>
+  <label class="check-row">
+    <input type="checkbox" id="cb-static">
+    <span>Static PNG <span class="muted">peak-lightning frame, one per size</span></span>
+  </label>
+</section>
+
+<script>
+window.onViewLoad = function({ state }) {
+  const sz = state.config.sizes;
+
+  const cbYt  = document.getElementById('cb-yt');
+  const cbCa  = document.getElementById('cb-ca');
+  const cbPs  = document.getElementById('cb-ps');
+  const cbSt  = document.getElementById('cb-static');
+
+  cbYt.checked = sz.youtube_thumbnail;
+  cbCa.checked = sz.channel_art;
+  cbPs.checked = sz.podcast_square;
+  cbSt.checked = state.config.output_static;
+
+  const update = () => {
+    const anySelected = cbYt.checked || cbCa.checked || cbPs.checked;
+    Wizard.setBlocked(!anySelected);
+  };
+
+  cbYt.addEventListener('change', e => { sz.youtube_thumbnail = e.target.checked; update(); });
+  cbCa.addEventListener('change', e => { sz.channel_art       = e.target.checked; update(); });
+  cbPs.addEventListener('change', e => { sz.podcast_square    = e.target.checked; update(); });
+  cbSt.addEventListener('change', e => { state.config.output_static = e.target.checked; });
+
+  update();
+};
+</script>

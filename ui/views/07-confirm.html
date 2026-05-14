@@ -1,0 +1,86 @@
+<section id="step-confirm">
+  <div class="step-title">Step 7 of 7 — Confirm &amp; Run</div>
+  <div class="step-sub">Review your settings. Click Run to start rendering.</div>
+
+  <div class="summary" id="summary-table"></div>
+</section>
+
+<script>
+window.onViewLoad = function({ state }) {
+  // Rename Next → Run
+  document.getElementById('btn-next').textContent = 'Run';
+
+  renderSummary(state.config);
+
+  // wizardsave: build payload, kick off render; wizard.js will call showRender() next
+  document.getElementById('wizard-content').addEventListener('wizardsave', (e) => {
+    e.detail.asyncDone = Api.startRender(buildPayload(state.config));
+  }, { once: true });
+};
+
+function renderSummary(cfg) {
+  const sizeMap = { youtube_thumbnail: 'YouTube', channel_art: 'Channel Art', podcast_square: 'Podcast' };
+  const sizesLabel = Object.entries(cfg.sizes)
+    .filter(([, v]) => v).map(([k]) => sizeMap[k] || k).join(', ') || 'None';
+
+  const L = cfg.layers, effects = [];
+  if (L.add_smoke)  effects.push('Smoke');
+  if (L.lightning_mode !== 'off') effects.push('Lightning (' + L.lightning_mode.replace(/_/g,' ') + ')');
+  if (L.add_flash)  effects.push('Flash');
+  if (L.add_text)   effects.push('Text');
+  if (L.add_embers) effects.push('Embers');
+  if (L.add_rain)   effects.push('Rain');
+  if (L.add_snow)   effects.push('Snow');
+  if (L.add_vignette)  effects.push('Vignette');
+  if (L.add_scanlines) effects.push('Scan lines');
+  if (L.add_chroma_aberration) effects.push('Chroma');
+  if (L.add_bloom)      effects.push('Bloom');
+  if (L.add_film_grain) effects.push('Film grain');
+  if (L.add_holo)  effects.push('Holo');
+  if (L.add_bokeh) effects.push('Bokeh');
+
+  const rows = [
+    ['source',  cfg.inputPath],
+    ['output',  cfg.outputDir],
+    ['sizes',   sizesLabel],
+    ['effects', effects.join(', ') || 'None'],
+    ['tone',    L.tone_mode + (L.stylize_mode !== 'none' ? ' / ' + L.stylize_mode : '')],
+  ];
+  if (L.add_text) rows.push(['tagline', cfg.tagline.text]);
+
+  document.getElementById('summary-table').innerHTML = rows.map(([k, v]) =>
+    `<div class="s-row"><div class="s-key">${k}</div><div class="s-val">${v}</div></div>`
+  ).join('');
+}
+
+function buildPayload(cfg) {
+  const t = cfg.tagline;
+  const h = (t.color_hex || '#DCBE78').replace('#', '').padEnd(6, '0');
+  return {
+    inputPath:     cfg.inputPath,
+    outputDir:     cfg.outputDir,
+    imgProc:       cfg.imgProc,
+    sizes:         cfg.sizes,
+    output_static: cfg.output_static,
+    layers: {
+      ...cfg.layers,
+      subbranch_length: cfg.layers.subbranch_pct / 100.0,
+    },
+    tagline: {
+      text:          t.text,
+      anchor:        t.anchor,
+      offset_y:      t.offset_y / 100.0,
+      font_size_pct: t.font_size_pct / 100.0,
+      align:         t.align,
+      orientation:   t.orientation,
+      text_color:    [
+        parseInt(h.slice(0,2), 16),
+        parseInt(h.slice(2,4), 16),
+        parseInt(h.slice(4,6), 16),
+      ],
+      shadow: t.shadow,
+      glow:   t.glow,
+    },
+  };
+}
+</script>

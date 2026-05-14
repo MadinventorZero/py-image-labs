@@ -1,0 +1,137 @@
+<section id="step-tagline">
+  <div class="step-title">Step 6 of 7 — Tagline &amp; Typography</div>
+  <div class="step-sub">Enter the text to display on the image.</div>
+  <div class="field-row">
+    <input type="text" class="input-path" id="inp-tagline" placeholder="Brand Name">
+  </div>
+
+  <button class="disc-btn" id="btn-disc">▸ Typography</button>
+
+  <div class="disc-content" id="disc-body" hidden>
+    <div class="field-row">
+      <span class="field-label">Placement</span>
+      <select id="sel-anchor">
+        <option value="top">Top</option>
+        <option value="center">Center</option>
+        <option value="bottom">Bottom</option>
+      </select>
+      <span class="field-label" style="min-width:54px; padding-left:8px;">Y offset</span>
+      <input type="range" min="-30" max="30" step="1" id="range-offset">
+      <span class="range-val" id="val-offset"></span>
+    </div>
+    <div class="field-row">
+      <span class="field-label">Font size</span>
+      <input type="range" min="2" max="20" step="1" id="range-fontsize">
+      <span class="range-val" id="val-fontsize"></span>
+      <span class="muted" style="margin-left:4px;">of height</span>
+    </div>
+    <div class="field-row">
+      <span class="field-label">Alignment</span>
+      <div class="seg-ctrl">
+        <button class="seg-btn" data-align="left">Left</button>
+        <button class="seg-btn" data-align="center">Center</button>
+        <button class="seg-btn" data-align="right">Right</button>
+      </div>
+    </div>
+    <div class="field-row">
+      <span class="field-label">Orientation</span>
+      <select id="sel-orientation">
+        <option value="horizontal">Horizontal</option>
+        <option value="vertical_cw">Vertical ↻</option>
+      </select>
+    </div>
+    <div class="field-row">
+      <span class="field-label">Text color</span>
+      <input type="text" id="inp-color" maxlength="7" style="width:90px;" placeholder="#DCBE78">
+      <div class="swatch" id="color-swatch"></div>
+    </div>
+    <div class="tog-row" id="row-shadow">
+      <div class="tog-track" id="tog-shadow"><div class="tog-thumb"></div></div>
+      <span class="tog-label">Drop shadow</span>
+    </div>
+    <div class="tog-row" id="row-glow">
+      <div class="tog-track" id="tog-glow"><div class="tog-thumb"></div></div>
+      <span class="tog-label">Amber glow</span>
+    </div>
+  </div>
+</section>
+
+<script>
+window.onViewLoad = function({ state }) {
+  const t = state.config.tagline;
+
+  // Text input + block guard
+  const inp = document.getElementById('inp-tagline');
+  inp.value = t.text;
+  const updateBlock = () => Wizard.setBlocked(!t.text.trim());
+  updateBlock();
+  inp.addEventListener('input', () => { t.text = inp.value; updateBlock(); });
+
+  // Disclosure toggle
+  document.getElementById('btn-disc').addEventListener('click', () => {
+    const body = document.getElementById('disc-body');
+    body.hidden = !body.hidden;
+    document.getElementById('btn-disc').textContent = body.hidden ? '▸ Typography' : '▾ Typography';
+  });
+
+  // Anchor
+  const selAnchor = document.getElementById('sel-anchor');
+  selAnchor.value = t.anchor;
+  selAnchor.addEventListener('change', e => { t.anchor = e.target.value; });
+
+  // Y offset range
+  const rangeOffset = document.getElementById('range-offset');
+  rangeOffset.value = t.offset_y;
+  document.getElementById('val-offset').textContent = t.offset_y;
+  rangeOffset.addEventListener('input', () => {
+    t.offset_y = parseInt(rangeOffset.value);
+    document.getElementById('val-offset').textContent = rangeOffset.value;
+  });
+
+  // Font size range
+  const rangeFontsize = document.getElementById('range-fontsize');
+  rangeFontsize.value = t.font_size_pct;
+  document.getElementById('val-fontsize').textContent = t.font_size_pct + '%';
+  rangeFontsize.addEventListener('input', () => {
+    t.font_size_pct = parseInt(rangeFontsize.value);
+    document.getElementById('val-fontsize').textContent = rangeFontsize.value + '%';
+  });
+
+  // Alignment seg ctrl
+  document.querySelectorAll('[data-align]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.align === t.align);
+    btn.addEventListener('click', () => {
+      t.align = btn.dataset.align;
+      document.querySelectorAll('[data-align]').forEach(b =>
+        b.classList.toggle('active', b.dataset.align === t.align));
+    });
+  });
+
+  // Orientation
+  const selOrient = document.getElementById('sel-orientation');
+  selOrient.value = t.orientation;
+  selOrient.addEventListener('change', e => { t.orientation = e.target.value; });
+
+  // Color
+  const inpColor = document.getElementById('inp-color');
+  const swatch   = document.getElementById('color-swatch');
+  inpColor.value = t.color_hex;
+  swatch.style.background = t.color_hex;
+  inpColor.addEventListener('input', () => {
+    t.color_hex = inpColor.value;
+    swatch.style.background = inpColor.value;
+  });
+
+  // Toggles
+  function bindToggle(trackId, key) {
+    const track = document.getElementById(trackId);
+    track.classList.toggle('on', t[key]);
+    track.closest('.tog-row').addEventListener('click', () => {
+      t[key] = !t[key];
+      track.classList.toggle('on', t[key]);
+    });
+  }
+  bindToggle('tog-shadow', 'shadow');
+  bindToggle('tog-glow',   'glow');
+};
+</script>

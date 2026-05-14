@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Brand Image Generator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/wizard.css">
+</head>
+<body>
+  <div id="app">
+    <header id="app-header">
+      <span id="app-title">Brand Image Generator</span>
+      <nav id="wizard-nav"></nav>
+    </header>
+
+    <main id="wizard-content">
+      <div class="loading">Loading…</div>
+    </main>
+
+    <footer id="app-footer">
+      <div id="wizard-controls" hidden>
+        <button id="btn-back" class="btn btn-secondary" hidden>Back</button>
+        <div class="spacer"></div>
+        <button id="btn-next" class="btn btn-primary">Next</button>
+      </div>
+    </footer>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/wizard.js"></script>
+</body>
+</html>

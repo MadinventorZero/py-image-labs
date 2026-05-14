@@ -1,0 +1,44 @@
+<section id="step-input">
+  <div class="step-title">Step 1 of 7 — Input File</div>
+  <div class="step-sub">Select the source image to process.</div>
+  <div class="field-row">
+    <input type="text" class="input-path" id="path-display" readonly placeholder="No file selected">
+    <button class="btn-browse" id="btn-browse">Browse…</button>
+  </div>
+  <div class="img-well">
+    <img id="preview-img" hidden alt="preview">
+    <div class="img-placeholder" id="preview-placeholder">image preview</div>
+  </div>
+</section>
+
+<script>
+window.onViewLoad = function({ state }) {
+  const update = () => Wizard.setBlocked(!state.config.inputPath);
+  update();
+
+  document.getElementById('btn-browse').addEventListener('click', async () => {
+    const path = await Api.pickImage();
+    if (!path) return;
+    state.config.inputPath = path;
+    document.getElementById('path-display').value = path;
+    const b64 = await Api.getImagePreview(path);
+    if (b64) {
+      const img = document.getElementById('preview-img');
+      img.src = 'data:image/jpeg;base64,' + b64;
+      img.hidden = false;
+      document.getElementById('preview-placeholder').hidden = true;
+    }
+    state.previewSrc = b64 ? 'data:image/jpeg;base64,' + b64 : null;
+    update();
+  });
+
+  // Restore preview when navigating back
+  if (state.previewSrc) {
+    const img = document.getElementById('preview-img');
+    img.src = state.previewSrc;
+    img.hidden = false;
+    document.getElementById('preview-placeholder').hidden = true;
+    document.getElementById('path-display').value = state.config.inputPath;
+  }
+};
+</script>

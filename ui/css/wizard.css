@@ -1,0 +1,30 @@
+/* Dark-themed phase/step indicator for #wizard-nav */
+#wizard-nav {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+#wizard-nav::-webkit-scrollbar { display: none; }
+
+.nav-phase { display: flex; flex-direction: column; gap: 3px; opacity: 0.45; transition: opacity 0.2s; }
+.nav-phase.active { opacity: 1; }
+.nav-phase.done   { opacity: 0.65; }
+
+.nav-phase-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--fg2);
+}
+.nav-phase.active .nav-phase-label { color: var(--go); }
+.nav-phase.done   .nav-phase-label { color: var(--fg2); }
+
+.nav-steps { display: flex; gap: 4px; }
+.nav-step {
+  width: 20px; height: 4px; border-radius: 2px;
+  background: var(--border);
+}
+.nav-step.active { background: var(--go); }
+.nav-step.done   { background: var(--grey); }
