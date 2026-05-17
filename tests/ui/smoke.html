@@ -48,15 +48,23 @@
 
   <!-- Load app JS (relative to ui/ root — serve from there) -->
   <script src="../../ui/js/api.js"></script>
+  <script src="../../ui/js/effect-library.js"></script>
   <script src="../../ui/js/wizard.js"></script>
 
   <!-- Inject mock and test cases -->
   <script src="cases/api-mock.js"></script>
   <script src="cases/wizard-nav.js"></script>
   <script src="cases/render-flow.js"></script>
+  <script src="cases/effect-stack.js"></script>
+  <script src="cases/output-formats.js"></script>
 
   <script>
-    const ALL_TESTS = [...WizardNavTests, ...RenderFlowTests];
+    const ALL_TESTS = [
+      ...WizardNavTests,
+      ...RenderFlowTests,
+      ...EffectStackTests,
+      ...OutputFormatTests,
+    ];
     const results   = document.getElementById('results');
     const summary   = document.getElementById('summary');
 

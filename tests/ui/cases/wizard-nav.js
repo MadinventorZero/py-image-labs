@@ -45,29 +45,34 @@ const WizardNavTests = [
   },
   {
     id: 'N5',
-    name: 'Step 6 skipped when add_text is false',
+    name: 'Step 6 skipped when tagline is disabled in effectStack',
     async run() {
-      Wizard.state.config.layers.add_text = false;
-      await Wizard.enterWizard(1, 0);  // step 05-layers
-      Wizard.setBlocked(false);
-      document.getElementById('btn-next').click();
-      await tick();
-      // Should jump to phase 2 (render/confirm), not step 06-tagline
-      const step = Wizard.PHASES[Wizard.state ? 2 : 0]?.steps[0];
-      assert(step?.id === '07-confirm', 'Should skip tagline and land on 07-confirm');
-    },
-  },
-  {
-    id: 'N6',
-    name: 'Step 6 shown when add_text is true',
-    async run() {
-      Wizard.state.config.layers.add_text = true;
+      // Use the effectStack tagline entry — the skipWhen reads from here, not layers.add_text
+      const stack = Wizard.state.config.effectStack;
+      const tagEntry = stack.find(l => l.id === 'tagline');
+      if (tagEntry) tagEntry.enabled = false;
       await Wizard.enterWizard(1, 0);  // step 05-layers
       Wizard.setBlocked(false);
       document.getElementById('btn-next').click();
       await tick();
       const content = document.getElementById('wizard-content').innerHTML;
-      assert(content.includes('step-tagline'), 'Should navigate to tagline step');
+      assert(!content.includes('step-tagline'), 'Should skip tagline when disabled in effectStack');
+    },
+  },
+  {
+    id: 'N6',
+    name: 'Step 6 shown when tagline is enabled in effectStack',
+    async run() {
+      // Ensure tagline is enabled via effectStack
+      const stack = Wizard.state.config.effectStack;
+      const tagEntry = stack.find(l => l.id === 'tagline');
+      if (tagEntry) tagEntry.enabled = true;
+      await Wizard.enterWizard(1, 0);  // step 05-layers
+      Wizard.setBlocked(false);
+      document.getElementById('btn-next').click();
+      await tick();
+      const content = document.getElementById('wizard-content').innerHTML;
+      assert(content.includes('step-tagline'), 'Should navigate to tagline when enabled in effectStack');
     },
   },
 ];
