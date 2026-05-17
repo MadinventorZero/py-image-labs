@@ -320,3 +320,181 @@ input[type="range"]::-webkit-slider-thumb {
   color: var(--fg2); letter-spacing: 0.06em; padding: 0 20px 8px 70px;
   opacity: 0.7;
 }
+
+/* ══════════════════════════════════════════════════════════════ */
+/*  Effects Lab — v5 Layer Stack                                  */
+/* ══════════════════════════════════════════════════════════════ */
+
+/* ── Stack container ──────────────────────────────────────────── */
+#fx-stack-container {
+  border: 1px solid var(--border); border-radius: 6px;
+  overflow: hidden; margin: 4px 20px;
+}
+#fx-stack-container:empty::after {
+  display: block; padding: 14px 16px;
+  font-size: 11px; color: var(--fg2); text-align: center;
+  content: 'No effects yet — add one below.';
+}
+
+/* ── Effect row (collapsed) ───────────────────────────────────── */
+.fx-row-wrap { border-bottom: 1px solid var(--rule); }
+.fx-row-wrap:last-child { border-bottom: none; }
+.fx-row-wrap.dragging   { opacity: 0.35; }
+.fx-row-wrap.drag-over > .fx-row { border-top: 2px solid var(--go); }
+
+.fx-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 10px 7px 10px;
+  background: var(--panel);
+  transition: background 0.12s;
+  min-height: 38px;
+}
+.fx-row:hover { background: #2a2d34; }
+
+.fx-handle {
+  color: var(--fg2); cursor: ns-resize; font-size: 13px;
+  flex-shrink: 0; user-select: none; padding: 0 2px;
+}
+.fx-eye {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--tog-on); flex-shrink: 0; cursor: pointer;
+  transition: background 0.15s; border: 2px solid transparent;
+}
+.fx-eye.off { background: var(--tog-off); }
+
+.fx-name {
+  font-family: 'IBM Plex Mono', monospace; font-size: 9px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--fg); min-width: 88px; flex-shrink: 0;
+}
+.fx-row-wrap .fx-name.dim { color: var(--fg2); }
+
+.fx-summary {
+  font-size: 10px; color: var(--fg2); flex: 1;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+
+.fx-gear, .fx-up, .fx-dn, .fx-del {
+  background: none; border: none; color: var(--fg2);
+  cursor: pointer; font-size: 11px; padding: 3px 5px;
+  flex-shrink: 0; border-radius: 3px; line-height: 1;
+  transition: color 0.12s, background 0.12s;
+}
+.fx-gear:hover { color: var(--fg); background: var(--input); }
+.fx-up:hover, .fx-dn:hover { color: var(--fg); background: var(--input); }
+.fx-del:hover  { color: #e74c3c; }
+.fx-gear.open  { color: var(--go); }
+
+/* ── Effect detail panel (expanded) ──────────────────────────── */
+.fx-detail {
+  background: var(--code);
+  padding: 10px 14px 12px 14px;
+  border-top: 1px solid var(--rule);
+}
+.fx-detail-inner { display: flex; flex-direction: column; gap: 5px; }
+
+.fx-param-row {
+  display: flex; align-items: center; gap: 8px; min-height: 26px;
+}
+.fx-param-row .field-label { min-width: 110px; }
+.fx-param-row input[type="range"] { width: 130px; }
+
+.fx-model-note {
+  font-size: 10px; color: var(--fg2); line-height: 1.6;
+  background: #1e2028; border: 1px solid var(--border);
+  border-radius: 4px; padding: 6px 9px; margin-bottom: 4px;
+}
+.fx-model-note code { color: #8db4d9; font-family: 'IBM Plex Mono', monospace; }
+.fx-model-icon { color: #f0a94c; margin-right: 3px; }
+
+.btn-preview-layer {
+  margin-top: 8px; padding: 4px 12px; font-size: 10px;
+  background: var(--input); color: var(--fg2);
+  border: 1px solid var(--border); border-radius: 4px;
+  cursor: pointer; align-self: flex-start;
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+.btn-preview-layer:hover { border-color: var(--go); color: var(--fg); }
+
+/* ── Color input (native, dark-styled) ───────────────────────── */
+input[type="color"] {
+  -webkit-appearance: none; appearance: none;
+  width: 34px; height: 22px; padding: 1px;
+  border: 1px solid var(--border); border-radius: 4px;
+  cursor: pointer; background: none; flex-shrink: 0;
+}
+input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+input[type="color"]::-webkit-color-swatch { border: none; border-radius: 2px; }
+
+/* ── Add Effect button ────────────────────────────────────────── */
+#btn-add-effect {
+  display: flex; align-items: center; justify-content: center;
+  gap: 6px; margin: 8px 20px; padding: 7px 0;
+  width: calc(100% - 40px);
+  background: var(--panel); border: 1px dashed var(--border);
+  border-radius: 5px; color: var(--fg2); font-size: 11px;
+  cursor: pointer; font-family: 'IBM Plex Sans', sans-serif;
+  transition: border-color 0.15s, color 0.15s;
+}
+#btn-add-effect:hover { border-color: var(--go); color: var(--fg); }
+
+/* ── Effect Library picker ────────────────────────────────────── */
+#fx-library {
+  border: 1px solid var(--border); border-radius: 6px;
+  margin: 0 20px 8px; padding: 4px 0 10px;
+  background: var(--panel);
+}
+.fx-lib-section { padding: 6px 14px 2px; }
+.fx-lib-pills   { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+
+.fx-pill {
+  background: var(--input); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 3px 11px; font-size: 11px; cursor: pointer;
+  font-family: 'IBM Plex Sans', sans-serif;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+.fx-pill:hover { background: var(--go); border-color: var(--go); color: white; }
+.fx-pill.in-stack { opacity: 0.35; cursor: default; pointer-events: none; }
+
+/* ── Preview panel ────────────────────────────────────────────── */
+.fx-preview-well {
+  margin: 4px 20px;
+  width: calc(100% - 40px); aspect-ratio: 16 / 9; max-height: 200px;
+  background: var(--code); border: 1px solid var(--border); border-radius: 5px;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+  position: relative;
+}
+.fx-preview-well img { width: 100%; height: 100%; object-fit: contain; }
+.fx-preview-well .img-placeholder { font-size: 10px; }
+
+.fx-preview-controls {
+  display: flex; align-items: center; gap: 10px;
+  padding: 5px 20px 12px;
+}
+
+/* ── GPU badge ────────────────────────────────────────────────── */
+.fx-gpu-badge {
+  font-family: 'IBM Plex Mono', monospace; font-size: 9px;
+  letter-spacing: 0.07em; color: var(--fg2);
+  background: var(--panel); border: 1px solid var(--border);
+  padding: 2px 9px; border-radius: 10px; white-space: nowrap;
+}
+.fx-gpu-badge.cuda  { color: #76b900; border-color: rgba(118,185,0,.35); }
+.fx-gpu-badge.mps   { color: #5ac8fa; border-color: rgba(90,200,250,.35); }
+.fx-gpu-badge.coreml{ color: #5ac8fa; border-color: rgba(90,200,250,.35); }
+
+/* ── Spinning loader ──────────────────────────────────────────── */
+.fx-spinner {
+  display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid var(--border); border-top-color: var(--go);
+  animation: spin 0.7s linear infinite; flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── fx-file-name ─────────────────────────────────────────────── */
+.fx-file-name {
+  font-size: 10px; flex: 1; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}

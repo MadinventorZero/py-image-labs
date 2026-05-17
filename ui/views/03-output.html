@@ -1,14 +1,39 @@
 <section id="step-output">
-  <div class="step-title">Step 3 of 7 — Output Folder</div>
-  <div class="step-sub">Select where finished GIFs will be saved.</div>
+  <div class="step-title">Step 3 of 7 — Output</div>
+  <div class="step-sub">Select where files will be saved and which formats to export.</div>
+
   <div class="field-row">
     <input type="text" class="input-path" id="dir-display" readonly placeholder="No folder selected">
     <button class="btn-browse" id="btn-browse-dir">Browse…</button>
   </div>
+
+  <div class="divider"></div>
+  <div class="sec-label">Export Formats</div>
+
+  <label class="check-row">
+    <input type="checkbox" id="cb-gif">
+    <span>Animated GIF <span class="muted">(legacy — 256-colour palette)</span></span>
+  </label>
+  <label class="check-row">
+    <input type="checkbox" id="cb-webp">
+    <span>Animated WebP <span class="muted">(recommended — full colour, smaller files)</span></span>
+  </label>
+  <label class="check-row">
+    <input type="checkbox" id="cb-mp4">
+    <span>MP4 video <span class="muted">(requires ffmpeg on PATH)</span></span>
+  </label>
+  <label class="check-row">
+    <input type="checkbox" id="cb-apng">
+    <span>Animated PNG <span class="muted">(lossless, largest files)</span></span>
+  </label>
+  <label class="check-row">
+    <input type="checkbox" id="cb-png-peak">
+    <span>Static PNG <span class="muted">(peak frame)</span></span>
+  </label>
 </section>
 
 <script>
-window.onViewLoad = function({ state }) {
+window.onViewLoad = function ({ state }) {
   const update = () => Wizard.setBlocked(!state.config.outputDir);
   update();
 
@@ -22,6 +47,21 @@ window.onViewLoad = function({ state }) {
     state.config.outputDir = path;
     document.getElementById('dir-display').value = path;
     update();
+  });
+
+  // ── Format checkboxes ─────────────────────────────────────────
+  const fmt = state.config.output;
+  const bindings = [
+    ['cb-gif',      'gif'],
+    ['cb-webp',     'webp'],
+    ['cb-mp4',      'mp4'],
+    ['cb-apng',     'apng'],
+    ['cb-png-peak', 'png_peak'],
+  ];
+  bindings.forEach(([id, key]) => {
+    const cb = document.getElementById(id);
+    cb.checked = !!fmt[key];
+    cb.addEventListener('change', () => { fmt[key] = cb.checked; });
   });
 };
 </script>

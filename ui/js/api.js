@@ -20,10 +20,13 @@ const Api = (() => {
     });
 
   return {
-    pickImage:       ()        => _call('pick_image'),
-    pickOutputDir:   ()        => _call('pick_output_dir'),
-    getImagePreview: (path)    => _call('get_image_preview', path),
-    startRender:     (payload) => _call('run_generation', payload),
-    getProgress:     ()        => _call('get_progress'),
+    pickImage:       ()         => _call('pick_image'),
+    pickOutputDir:   ()         => _call('pick_output_dir'),
+    browseFile:      (opts)     => _call('browse_file', opts),
+    getImagePreview: (path)     => _call('get_image_preview', path),
+    getDeviceInfo:   ()         => _call('get_device_info'),
+    previewStack:    (payload)  => _call('preview_stack', payload),
+    startRender:     (payload)  => _call('run_generation', payload),
+    getProgress:     ()         => _call('get_progress'),
   };
 })();

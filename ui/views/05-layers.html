@@ -1,208 +1,313 @@
 <section id="step-layers">
-  <div class="step-title">Step 5 of 7 — Animation Layers</div>
-  <div class="step-sub">Choose which effects to apply.</div>
+  <div class="step-title">Step 5 of 7 — Effects Lab</div>
+  <div class="step-sub">Build your effect stack. Click ⚙ to tune each effect.</div>
 
-  <div class="tog-row" id="row-smoke">
-    <div class="tog-track" id="tog-smoke"><div class="tog-thumb"></div></div>
-    <span class="tog-label">Smoke / mist animation</span>
-  </div>
-  <div class="tog-row" id="row-flash">
-    <div class="tog-track" id="tog-flash"><div class="tog-thumb"></div></div>
-    <span class="tog-label">Flash <span class="muted">(scene illumination)</span></span>
-  </div>
-  <div class="tog-row" id="row-text">
-    <div class="tog-track" id="tog-text"><div class="tog-thumb"></div></div>
-    <span class="tog-label">Gothic text overlay</span>
-  </div>
-  <div class="skip-hint" id="tagline-skip-hint">Tagline step will be skipped</div>
+  <div class="sec-label">Active Layers</div>
+  <div id="fx-stack-container"></div>
 
-  <!-- Lightning -->
-  <div class="field-row" style="margin-top:6px;">
-    <span class="field-label">Lightning</span>
-    <select id="sel-lightning">
-      <option value="off">Off</option>
-      <option value="simple">Simple bolt</option>
-      <option value="ground_strike">Ground strike</option>
-      <option value="atmospheric">Atmospheric</option>
-      <option value="full_storm">Full storm</option>
-    </select>
-  </div>
-  <div class="l-desc" id="l-desc"></div>
-  <div class="adv-block" id="adv-block">
-    <div class="range-row">
-      <span class="field-label" id="lbl-bolts">Strikes:</span>
-      <input type="range" min="1" max="6" step="1" id="range-bolts">
-      <span class="range-val" id="val-bolts"></span>
-    </div>
-    <div class="range-row">
-      <span class="field-label">Branch depth:</span>
-      <input type="range" min="2" max="6" step="1" id="range-depth">
-      <span class="range-val" id="val-depth"></span>
-    </div>
-    <div class="range-row">
-      <span class="field-label">Fork concentration:</span>
-      <input type="range" min="1" max="6" step="1" id="range-fork">
-      <span class="range-val" id="val-fork"></span>
-    </div>
-    <div class="range-row">
-      <span class="field-label">Sub-branch length:</span>
-      <input type="range" min="20" max="70" step="5" id="range-sub">
-      <span class="range-val" id="val-sub"></span>
-    </div>
+  <button id="btn-add-effect">+ Add Effect</button>
+
+  <div id="fx-library" hidden>
+    <!-- Populated by JS from EFFECT_CATEGORIES -->
   </div>
 
-  <div class="divider"></div>
-
-  <div class="tog-row" id="row-embers">
-    <div class="tog-track" id="tog-embers"><div class="tog-thumb"></div></div>
-    <span class="tog-label">Embers / sparks</span>
+  <div class="sec-label" style="margin-top:8px;">Preview</div>
+  <div class="fx-preview-well" id="fx-preview-well">
+    <span class="img-placeholder">Click Preview to render a thumbnail</span>
   </div>
-  <div class="tog-row" id="row-rain">
-    <div class="tog-track" id="tog-rain"><div class="tog-thumb"></div></div>
-    <span class="tog-label">Rain / drizzle</span>
-  </div>
-  <div class="tog-row" id="row-snow">
-    <div class="tog-track" id="tog-snow"><div class="tog-thumb"></div></div>
-    <span class="tog-label">Snow / hail</span>
-  </div>
-  <div class="tog-row" id="row-vignette">
-    <div class="tog-track" id="tog-vignette"><div class="tog-thumb"></div></div>
-    <span class="tog-label">Vignette</span>
-  </div>
-  <div class="tog-row" id="row-scanlines">
-    <div class="tog-track" id="tog-scanlines"><div class="tog-thumb"></div></div>
-    <span class="tog-label">Scan lines <span class="muted">(CRT)</span></span>
-  </div>
-
-  <div class="divider"></div>
-
-  <div class="field-row">
-    <span class="field-label">Tone &amp; Color</span>
-    <select id="sel-tone">
-      <option value="color">Color</option>
-      <option value="bw">B&amp;W</option>
-      <option value="sepia">Sepia</option>
-      <option value="negative">Negative</option>
-      <option value="solarize">Solarize</option>
-      <option value="historical">Historical Photo</option>
-    </select>
-  </div>
-  <div class="field-row">
-    <span class="field-label">Stylize subject</span>
-    <select id="sel-stylize">
-      <option value="none">None</option>
-      <option value="cartoon">Cartoon</option>
-      <option value="watercolor">Watercolor</option>
-      <option value="oil">Oil</option>
-      <option value="sketch">Sketch</option>
-    </select>
-  </div>
-
-  <div class="divider"></div>
-
-  <div class="tog-row" id="row-chroma">
-    <div class="tog-track" id="tog-chroma"><div class="tog-thumb"></div></div>
-    <span class="tog-label">Chromatic aberration <span class="muted">(RGB fringe)</span></span>
-  </div>
-  <div class="tog-row" id="row-bloom">
-    <div class="tog-track" id="tog-bloom"><div class="tog-thumb"></div></div>
-    <span class="tog-label">Bloom / glow <span class="muted">(highlight expansion)</span></span>
-  </div>
-  <div class="tog-row" id="row-grain">
-    <div class="tog-track" id="tog-grain"><div class="tog-thumb"></div></div>
-    <span class="tog-label">Film grain <span class="muted">(per-frame noise)</span></span>
-  </div>
-  <div class="tog-row" id="row-holo">
-    <div class="tog-track" id="tog-holo"><div class="tog-thumb"></div></div>
-    <span class="tog-label">Holographic shimmer <span class="muted">(subject)</span></span>
-  </div>
-  <div class="tog-row" id="row-bokeh">
-    <div class="tog-track" id="tog-bokeh"><div class="tog-thumb"></div></div>
-    <span class="tog-label">Bokeh <span class="muted">(blur background layers)</span></span>
+  <div class="fx-preview-controls">
+    <button class="btn btn-secondary" id="btn-preview-stack">Preview Stack</button>
+    <div class="fx-gpu-badge" id="gpu-badge">—</div>
   </div>
 </section>
 
 <script>
-window.onViewLoad = function({ state }) {
-  const L = state.config.layers;
+window.onViewLoad = async function ({ state }) {
+  const stack = state.config.effectStack;
 
-  function bindToggle(trackId, key) {
-    const track = document.getElementById(trackId);
-    const sync  = () => track.classList.toggle('on', L[key]);
-    sync();
-    track.closest('.tog-row').addEventListener('click', () => {
-      L[key] = !L[key];
-      sync();
-      if (key === 'add_text') updateTaglineSkip();
-    });
+  // ── GPU badge ─────────────────────────────────────────────────
+  if (!state.gpuInfo) {
+    state.gpuInfo = await Api.getDeviceInfo().catch(() => ({ backend: 'cpu', name: 'CPU' }));
   }
+  const badge = document.getElementById('gpu-badge');
+  badge.textContent = state.gpuInfo.name || 'CPU';
+  badge.className = 'fx-gpu-badge ' + (state.gpuInfo.backend || 'cpu');
 
-  bindToggle('tog-smoke',     'add_smoke');
-  bindToggle('tog-flash',     'add_flash');
-  bindToggle('tog-text',      'add_text');
-  bindToggle('tog-embers',    'add_embers');
-  bindToggle('tog-rain',      'add_rain');
-  bindToggle('tog-snow',      'add_snow');
-  bindToggle('tog-vignette',  'add_vignette');
-  bindToggle('tog-scanlines', 'add_scanlines');
-  bindToggle('tog-chroma',    'add_chroma_aberration');
-  bindToggle('tog-bloom',     'add_bloom');
-  bindToggle('tog-grain',     'add_film_grain');
-  bindToggle('tog-holo',      'add_holo');
-  bindToggle('tog-bokeh',     'add_bokeh');
+  // ── Build library picker HTML ─────────────────────────────────
+  const lib = document.getElementById('fx-library');
+  lib.innerHTML = EFFECT_CATEGORIES.map(cat => {
+    const pills = cat.ids.map(id => {
+      const def = EFFECT_LIBRARY[id];
+      if (!def) return '';
+      return `<button class="fx-pill" data-id="${id}">${def.label}</button>`;
+    }).join('');
+    return `
+      <div class="fx-lib-section">
+        <div class="sec-label" style="padding:6px 14px 2px;">${cat.label}</div>
+        <div class="fx-lib-pills">${pills}</div>
+      </div>`;
+  }).join('');
 
-  function bindRange(id, key, displayId) {
-    const input = document.getElementById(id);
-    input.value = L[key];
-    document.getElementById(displayId).textContent = input.value;
-    input.addEventListener('input', () => {
-      L[key] = parseFloat(input.value);
-      document.getElementById(displayId).textContent = input.value;
-    });
-  }
-
-  bindRange('range-bolts', 'n_bolts',           'val-bolts');
-  bindRange('range-depth', 'branch_depth',       'val-depth');
-  bindRange('range-fork',  'fork_concentration', 'val-fork');
-  bindRange('range-sub',   'subbranch_pct',      'val-sub');
-
-  const lSel = document.getElementById('sel-lightning');
-  lSel.value = L.lightning_mode;
-  lSel.addEventListener('change', () => {
-    L.lightning_mode = lSel.value;
-    syncLightningAdvanced();
+  lib.querySelectorAll('.fx-pill').forEach(pill => {
+    pill.addEventListener('click', () => addEffect(pill.dataset.id));
   });
 
-  const selTone    = document.getElementById('sel-tone');
-  const selStylize = document.getElementById('sel-stylize');
-  selTone.value    = L.tone_mode;
-  selStylize.value = L.stylize_mode;
-  selTone.addEventListener('change',    e => { L.tone_mode    = e.target.value; });
-  selStylize.addEventListener('change', e => { L.stylize_mode = e.target.value; });
-
-  const LIGHTNING_DESCS = {
-    simple:        'Single midpoint-displacement bolt with a few side branches.',
-    ground_strike: 'Tall branching channels with ground-contact flash at terminus.',
-    atmospheric:   'Intracloud — horizontal radial spreading, no ground contact.',
-    full_storm:    'Atmospheric discharge combined with ground strikes.',
-  };
-
-  const BOLT_LABELS = {
-    ground_strike: 'Strikes:', atmospheric: 'Spines:', full_storm: 'Strikes:',
-  };
-
-  function syncLightningAdvanced() {
-    const adv = !['off', 'simple'].includes(L.lightning_mode);
-    document.getElementById('adv-block').hidden = !adv;
-    document.getElementById('l-desc').textContent = LIGHTNING_DESCS[L.lightning_mode] || '';
-    document.getElementById('lbl-bolts').textContent = BOLT_LABELS[L.lightning_mode] || 'Channels:';
+  // ── Summary string for a collapsed row ───────────────────────
+  function getSummary(item) {
+    if (!item.enabled) return '(off)';
+    const p = item.params;
+    switch (item.id) {
+      case 'lightning':        return (p.mode || '').replace(/_/g, ' ');
+      case 'aura':             return (p.preset || '').replace(/_/g, ' ');
+      case 'tone_grade':       return p.mode || '';
+      case 'bloom':            return `r=${p.radius ?? 12}  s=${(p.strength ?? 0.40).toFixed(2)}`;
+      case 'chroma_aberration':return `shift ${p.shift ?? 5}px`;
+      case 'vignette':         return `${Math.round((p.strength ?? 0.72) * 100)}%`;
+      case 'bokeh':            return `r=${p.radius ?? 18}px`;
+      case 'sharpen':          return (p.mode || 'usm').replace(/_/g, ' ');
+      case 'film_grain':       return `${p.intensity ?? 0.04}`;
+      case 'anime_hayao':
+      case 'anime_paprika':
+      case 'anime_face_paint':
+      case 'anime_wbc':        return '(neural — needs model)';
+      case 'chibi':            return `split=${p.head_pct ?? 42}%  scale=${(p.head_scale ?? 1.45).toFixed(2)}`;
+      case 'upscale':          return `${p.mode ?? 'x4'}  (neural — needs model)`;
+      case 'fog':              return `${Math.round((p.density ?? 0.4) * 100)}%  h=${p.height_pct ?? 50}%`;
+      case 'god_rays':         return `x=${p.origin_x ?? 50}%  y=${p.origin_y ?? 15}%`;
+      case 'glitch':           return `i=${(p.intensity ?? 0.5).toFixed(2)}  bands=${p.band_count ?? 6}`;
+      default:                 return '';
+    }
   }
 
-  function updateTaglineSkip() {
-    document.getElementById('tagline-skip-hint').hidden = L.add_text;
+  // ── Mark library pills that are already in the stack ─────────
+  function syncLibraryPills() {
+    const inStack = new Set(stack.map(i => i.id));
+    lib.querySelectorAll('.fx-pill').forEach(p => {
+      p.classList.toggle('in-stack', inStack.has(p.dataset.id));
+    });
   }
 
-  syncLightningAdvanced();
-  updateTaglineSkip();
+  // ── Drag-to-reorder state ─────────────────────────────────────
+  let dragSrcIdx = -1;
+
+  // ── Build one effect row-wrap (row + optional detail panel) ──
+  function buildEffectRow(item, idx) {
+    const def  = EFFECT_LIBRARY[item.id];
+    if (!def) return null;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'fx-row-wrap';
+
+    // ── Collapsed row ──────────────────────────────────────────
+    const row = document.createElement('div');
+    row.className = 'fx-row';
+
+    const eyeClass  = item.enabled ? 'fx-eye' : 'fx-eye off';
+    const gearClass = item._open   ? 'fx-gear open' : 'fx-gear';
+    row.innerHTML = `
+      <div class="fx-handle" draggable="true" title="Drag to reorder">≡</div>
+      <div class="${eyeClass}" title="Toggle on/off"></div>
+      <div class="fx-name">${def.label}</div>
+      <div class="fx-summary">${getSummary(item)}</div>
+      <button class="${gearClass}" title="Edit params">⚙</button>
+      <button class="fx-up"  title="Move up">↑</button>
+      <button class="fx-dn"  title="Move down">↓</button>
+      <button class="fx-del" title="Remove">✕</button>`;
+
+    // Eye toggle
+    row.querySelector('.fx-eye').addEventListener('click', () => {
+      item.enabled = !item.enabled;
+      renderStack();
+    });
+
+    // Gear expand/collapse
+    row.querySelector('.fx-gear').addEventListener('click', () => {
+      item._open = !item._open;
+      renderStack();
+    });
+
+    // Up / Down
+    row.querySelector('.fx-up').addEventListener('click', () => {
+      if (idx > 0) { [stack[idx - 1], stack[idx]] = [stack[idx], stack[idx - 1]]; renderStack(); }
+    });
+    row.querySelector('.fx-dn').addEventListener('click', () => {
+      if (idx < stack.length - 1) { [stack[idx], stack[idx + 1]] = [stack[idx + 1], stack[idx]]; renderStack(); }
+    });
+
+    // Delete
+    row.querySelector('.fx-del').addEventListener('click', () => {
+      stack.splice(idx, 1);
+      renderStack();
+      syncLibraryPills();
+    });
+
+    // ── Drag-to-reorder ────────────────────────────────────────
+    const handle = row.querySelector('.fx-handle');
+    handle.addEventListener('dragstart', e => {
+      dragSrcIdx = idx;
+      wrap.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    handle.addEventListener('dragend', () => {
+      wrap.classList.remove('dragging');
+      document.querySelectorAll('.fx-row-wrap.drag-over')
+        .forEach(el => el.classList.remove('drag-over'));
+    });
+
+    wrap.addEventListener('dragover', e => {
+      if (dragSrcIdx < 0 || dragSrcIdx === idx) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      wrap.classList.add('drag-over');
+    });
+    wrap.addEventListener('dragleave', () => wrap.classList.remove('drag-over'));
+    wrap.addEventListener('drop', e => {
+      e.preventDefault();
+      wrap.classList.remove('drag-over');
+      if (dragSrcIdx < 0 || dragSrcIdx === idx) return;
+      const [moved] = stack.splice(dragSrcIdx, 1);
+      stack.splice(idx, 0, moved);
+      dragSrcIdx = -1;
+      renderStack();
+    });
+
+    wrap.appendChild(row);
+
+    // ── Expanded detail panel ──────────────────────────────────
+    if (item._open) {
+      const detail = document.createElement('div');
+      detail.className = 'fx-detail';
+      const inner = document.createElement('div');
+      inner.className = 'fx-detail-inner';
+
+      // Opacity slider — always first in detail panel
+      const opRow = document.createElement('div');
+      opRow.className = 'fx-param-row';
+      const opVal = (item.opacity ?? 1.0).toFixed(2);
+      opRow.innerHTML = `
+        <span class="field-label">Opacity</span>
+        <input type="range" min="0" max="1" step="0.05" value="${opVal}">
+        <span class="range-val">${opVal}</span>`;
+      const opInp = opRow.querySelector('input');
+      const opDisp = opRow.querySelector('.range-val');
+      opInp.addEventListener('input', () => {
+        item.opacity = parseFloat(opInp.value);
+        opDisp.textContent = item.opacity.toFixed(2);
+      });
+      inner.appendChild(opRow);
+
+      // Model availability notice for neural effects
+      if (def.needsModel) {
+        const modelNote = document.createElement('div');
+        modelNote.className = 'fx-model-note';
+        modelNote.innerHTML =
+          `<span class="fx-model-icon">⬇</span> ` +
+          `Requires <code>${def.needsModel}.onnx</code> in <code>.models/</code>.<br>` +
+          `See <code>engine/models_manager.py</code> for export instructions.`;
+        inner.appendChild(modelNote);
+      }
+
+      if (def.params.length > 0) {
+        inner.appendChild(buildParamUI(def, item));
+      } else if (item.id === 'tagline') {
+        const note = document.createElement('div');
+        note.className = 'muted';
+        note.style.fontSize = '11px';
+        note.textContent = 'Text options are configured in the next step.';
+        inner.appendChild(note);
+      }
+
+      const prevBtn = document.createElement('button');
+      prevBtn.className = 'btn-preview-layer';
+      prevBtn.textContent = 'Preview this layer';
+      prevBtn.addEventListener('click', () => previewSingleLayer(item));
+      inner.appendChild(prevBtn);
+
+      detail.appendChild(inner);
+      wrap.appendChild(detail);
+    }
+
+    return wrap;
+  }
+
+  // ── Re-render the entire stack list ──────────────────────────
+  function renderStack() {
+    const container = document.getElementById('fx-stack-container');
+    container.innerHTML = '';
+    stack.forEach((item, idx) => {
+      const el = buildEffectRow(item, idx);
+      if (el) container.appendChild(el);
+    });
+  }
+
+  // ── Add an effect from the library ───────────────────────────
+  function addEffect(effectId) {
+    if (stack.some(i => i.id === effectId)) return;
+    const def = EFFECT_LIBRARY[effectId];
+    if (!def) return;
+
+    const params = { ...(def.defaults || {}) };
+    stack.push({ id: effectId, enabled: true, opacity: 1.0, params, _open: true });
+    lib.hidden = true;
+    renderStack();
+    syncLibraryPills();
+
+    // Scroll to new row
+    requestAnimationFrame(() => {
+      const container = document.getElementById('fx-stack-container');
+      container.lastElementChild?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
+
+  // ── Preview helpers ───────────────────────────────────────────
+  async function runPreview(previewStack) {
+    const well = document.getElementById('fx-preview-well');
+    well.innerHTML = '<div class="fx-spinner"></div>';
+    try {
+      const src = await Api.previewStack({
+        inputPath:   state.config.inputPath,
+        effectStack: previewStack,
+        imgProc:     state.config.imgProc,
+        previewSize: 480,
+      });
+      if (src) {
+        well.innerHTML = `<img src="${src}" alt="preview">`;
+        state.previewSrc = src;
+      } else {
+        well.innerHTML = '<span class="img-placeholder muted">Preview unavailable</span>';
+      }
+    } catch (e) {
+      console.error('Preview failed:', e);
+      well.innerHTML = '<span class="img-placeholder muted">Preview error</span>';
+    }
+  }
+
+  async function previewSingleLayer(item) {
+    await runPreview([{ ...item, enabled: true }]);
+  }
+
+  // ── Wire top-level buttons ────────────────────────────────────
+  document.getElementById('btn-add-effect').addEventListener('click', () => {
+    lib.hidden = !lib.hidden;
+  });
+
+  document.getElementById('btn-preview-stack').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-preview-stack');
+    btn.disabled = true;
+    btn.textContent = 'Rendering…';
+    await runPreview(stack);
+    btn.disabled = false;
+    btn.textContent = 'Preview Stack';
+  });
+
+  // ── Restore preview if we have one ───────────────────────────
+  if (state.previewSrc) {
+    const well = document.getElementById('fx-preview-well');
+    well.innerHTML = `<img src="${state.previewSrc}" alt="preview">`;
+  }
+
+  // ── Initial render ────────────────────────────────────────────
+  renderStack();
+  syncLibraryPills();
 };
 </script>

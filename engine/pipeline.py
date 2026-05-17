@@ -17,7 +17,20 @@ from engine.effects.post import (
 from engine.effects.overlay import (
     _FLASH_ENVELOPE, make_flash_layer, make_vignette, make_scanlines,
 )
+from engine.effects.aura import make_aura_frame
+from engine.effects.sharpen import apply_sharpen, apply_denoise
+from engine.effects.atmosphere import make_fog_frame, make_god_rays_frame
+from engine.effects.glitch import apply_glitch
 from engine.image_proc import isolate_subject, apply_image_processing
+
+
+def _opacity(layer: "Image.Image", pct: float) -> "Image.Image":
+    """Scale the alpha channel of an RGBA layer by pct (0.0–1.0)."""
+    if pct >= 1.0:
+        return layer
+    r, g, b, a = layer.split()
+    a = a.point(lambda x: int(x * pct))
+    return Image.merge("RGBA", (r, g, b, a))
 
 
 def build_frame(
@@ -48,51 +61,111 @@ def build_frame(
     frame = Image.new("RGBA", canvas_size, cfg.bg_color + (255,))
 
     if cfg.add_rain:
-        frame = Image.alpha_composite(frame, make_rain_frame(canvas_size, t))
+        frame = Image.alpha_composite(frame,
+            _opacity(make_rain_frame(canvas_size, t, n_drops=cfg.rain_n_drops, angle_deg=cfg.rain_angle),
+                     cfg.effect_opacity.get("rain", 1.0)))
     if cfg.add_snow:
-        frame = Image.alpha_composite(frame, make_snow_frame(canvas_size, t))
+        frame = Image.alpha_composite(frame,
+            _opacity(make_snow_frame(canvas_size, t),
+                     cfg.effect_opacity.get("snow", 1.0)))
 
     if cfg.add_lightning and lightning_alpha > 0:
+        _lg_op = cfg.effect_opacity.get("lightning", 1.0)
         if cfg.lightning_mode in ("ground_strike", "atmospheric", "full_storm") and bolt_trees:
             frame = Image.alpha_composite(
                 frame,
-                make_atmospheric_lightning_layer(canvas_size, bolt_trees,
-                                                 lightning_alpha, cfg.branch_depth),
+                _opacity(make_atmospheric_lightning_layer(canvas_size, bolt_trees,
+                                                          lightning_alpha, cfg.branch_depth),
+                         _lg_op),
             )
             if ground_points:
                 frame = Image.alpha_composite(
                     frame,
-                    make_ground_contact_glow(canvas_size, ground_points, lightning_alpha),
+                    _opacity(make_ground_contact_glow(canvas_size, ground_points, lightning_alpha),
+                             _lg_op),
                 )
         elif lightning_bolts:
             frame = Image.alpha_composite(
-                frame, make_lightning_layer(canvas_size, lightning_bolts, lightning_alpha)
+                frame,
+                _opacity(make_lightning_layer(canvas_size, lightning_bolts, lightning_alpha),
+                         _lg_op),
             )
 
     if cfg.add_smoke:
+        _smoke_n = max(20, int(cfg.smoke_density * 220))
         frame = Image.alpha_composite(
             frame,
-            make_smoke_frame(canvas_size, t * 0.5,
-                             smoke_x_min, smoke_x_max, smoke_y, cfg.smoke_tint),
+            _opacity(make_smoke_frame(canvas_size, t * 0.5,
+                                      smoke_x_min, smoke_x_max, smoke_y, cfg.smoke_tint,
+                                      num_particles=_smoke_n),
+                     cfg.effect_opacity.get("smoke", 1.0)),
         )
 
     if cfg.add_embers and embers_origin:
         frame = Image.alpha_composite(
-            frame, make_embers_frame(canvas_size, t, embers_origin[0], embers_origin[1])
+            frame,
+            _opacity(make_embers_frame(canvas_size, t, embers_origin[0], embers_origin[1],
+                                       count=cfg.embers_count),
+                     cfg.effect_opacity.get("embers", 1.0)),
         )
 
+    if cfg.add_fog:
+        frame = Image.alpha_composite(frame,
+            _opacity(make_fog_frame(canvas_size, t,
+                                    density=cfg.fog_density,
+                                    tint=cfg.fog_tint,
+                                    height_pct=cfg.fog_height_pct),
+                     cfg.effect_opacity.get("fog", 1.0)))
+
+    if cfg.add_god_rays:
+        frame = Image.alpha_composite(frame,
+            _opacity(make_god_rays_frame(canvas_size, t,
+                                         intensity=cfg.god_rays_intensity,
+                                         origin_x=cfg.god_rays_origin_x,
+                                         origin_y=cfg.god_rays_origin_y,
+                                         color=cfg.god_rays_color),
+                     cfg.effect_opacity.get("god_rays", 1.0)))
+
     if cfg.add_bokeh and cfg.bokeh_radius > 0:
-        frame = frame.filter(ImageFilter.GaussianBlur(radius=cfg.bokeh_radius))
+        _bk_op = cfg.effect_opacity.get("bokeh", 1.0)
+        blurred = frame.filter(ImageFilter.GaussianBlur(radius=cfg.bokeh_radius))
+        frame = Image.blend(frame, blurred, _bk_op) if _bk_op < 1.0 else blurred
 
     lx, ly = lantern_pos
     lw, lh = lantern_size
+    import numpy as np
     scaled = lantern.resize((lw, lh), Image.LANCZOS)
+
+    # ── Aura underlayer (L2, behind subject) ──────────────────────────────
+    if cfg.add_aura:
+        subj_mask_arr = np.zeros((canvas_size[1], canvas_size[0]), dtype=np.uint8)
+        alpha_patch   = np.array(scaled.split()[3], dtype=np.uint8)
+        ph, pw = min(lh, canvas_size[1] - max(0, ly)), min(lw, canvas_size[0] - max(0, lx))
+        if ph > 0 and pw > 0:
+            subj_mask_arr[max(0, ly):max(0, ly)+ph, max(0, lx):max(0, lx)+pw] = \
+                alpha_patch[:ph, :pw]
+        aura_layer = make_aura_frame(
+            subj_mask_arr, canvas_size, t,
+            preset          = cfg.aura_preset,
+            core_color      = cfg.aura_core_color,
+            corona_color    = cfg.aura_corona_color,
+            core_radius     = cfg.aura_core_radius,
+            corona_radius   = cfg.aura_corona_radius,
+            pulse_speed     = cfg.aura_pulse_speed,
+            pulse_depth     = cfg.aura_pulse_depth,
+            electric_fringe = cfg.aura_electric_fringe,
+        )
+        frame = Image.alpha_composite(frame,
+            _opacity(aura_layer, cfg.effect_opacity.get("aura", 1.0)))
+
     frame.paste(scaled, (lx, ly), scaled)
 
     if cfg.add_holo:
         subj_mask = Image.new("L", canvas_size, 0)
         subj_mask.paste(scaled.split()[3], (lx, ly))
-        frame = Image.alpha_composite(frame, make_holo_frame(canvas_size, t, subj_mask))
+        frame = Image.alpha_composite(frame,
+            _opacity(make_holo_frame(canvas_size, t, subj_mask),
+                     cfg.effect_opacity.get("holo_shimmer", 1.0)))
 
     if cfg.add_text and font and word_layout:
         n_words = len(word_layout)
@@ -113,32 +186,61 @@ def build_frame(
                            tag.text_color, cfg.shadow_color, tag.shadow, tag.glow)
 
     if cfg.add_flash and flash_alpha > 0:
-        frame = Image.alpha_composite(frame, make_flash_layer(canvas_size, flash_alpha))
+        frame = Image.alpha_composite(frame,
+            _opacity(make_flash_layer(canvas_size, flash_alpha),
+                     cfg.effect_opacity.get("flash", 1.0)))
 
     if cfg.tone_mode != "color":
-        frame = apply_tone_mode(frame, cfg.tone_mode)
-        if frame.mode != "RGBA":
-            frame = frame.convert("RGBA")
+        _tn_op = cfg.effect_opacity.get("tone_grade", 1.0)
+        toned = apply_tone_mode(frame, cfg.tone_mode)
+        if toned.mode != "RGBA":
+            toned = toned.convert("RGBA")
+        frame = Image.blend(frame, toned, _tn_op) if _tn_op < 1.0 else toned
 
     if cfg.add_chroma_aberration:
-        frame = apply_chromatic_aberration(
-            frame.convert("RGB"), cfg.chroma_shift
-        ).convert("RGBA")
+        _ca_op = cfg.effect_opacity.get("chroma_aberration", 1.0)
+        chromed = apply_chromatic_aberration(frame.convert("RGB"), cfg.chroma_shift).convert("RGBA")
+        frame = Image.blend(frame, chromed, _ca_op) if _ca_op < 1.0 else chromed
 
     if cfg.add_bloom:
-        frame = apply_bloom(
-            frame.convert("RGB"), cfg.bloom_radius, cfg.bloom_strength
+        _bl_op = cfg.effect_opacity.get("bloom", 1.0)
+        bloomed = apply_bloom(frame.convert("RGB"), cfg.bloom_radius, cfg.bloom_strength).convert("RGBA")
+        frame = Image.blend(frame, bloomed, _bl_op) if _bl_op < 1.0 else bloomed
+
+    if cfg.add_glitch:
+        _gl_op = cfg.effect_opacity.get("glitch", 1.0)
+        glitched = apply_glitch(frame, t=t, intensity=cfg.glitch_intensity,
+                                band_count=cfg.glitch_band_count,
+                                channel_split=cfg.glitch_channel_split).convert("RGBA")
+        frame = Image.blend(frame, glitched, _gl_op) if _gl_op < 1.0 else glitched
+
+    if cfg.add_denoise:
+        _dn_op = cfg.effect_opacity.get("denoise", 1.0)
+        denoised = apply_denoise(frame, strength=cfg.denoise_strength, mode=cfg.denoise_mode).convert("RGBA")
+        frame = Image.blend(frame, denoised, _dn_op) if _dn_op < 1.0 else denoised
+
+    if cfg.add_sharpen:
+        _sh_op = cfg.effect_opacity.get("sharpen", 1.0)
+        sharpened = apply_sharpen(
+            frame, mode=cfg.sharpen_mode,
+            amount=cfg.sharpen_amount, radius=cfg.sharpen_radius,
+            threshold=cfg.sharpen_threshold,
         ).convert("RGBA")
+        frame = Image.blend(frame, sharpened, _sh_op) if _sh_op < 1.0 else sharpened
 
     if vignette_layer is not None:
-        frame = Image.alpha_composite(frame, vignette_layer)
+        frame = Image.alpha_composite(frame,
+            _opacity(vignette_layer, cfg.effect_opacity.get("vignette", 1.0)))
 
     if scanlines_layer is not None:
-        frame = Image.alpha_composite(frame, scanlines_layer)
+        frame = Image.alpha_composite(frame,
+            _opacity(scanlines_layer, cfg.effect_opacity.get("scanlines", 1.0)))
 
     rgb_out = frame.convert("RGB")
     if cfg.add_film_grain:
-        rgb_out = apply_film_grain(rgb_out, cfg.film_grain_intensity, seed=frame_idx)
+        _gr_op = cfg.effect_opacity.get("film_grain", 1.0)
+        grainy = apply_film_grain(rgb_out, cfg.film_grain_intensity, seed=frame_idx)
+        rgb_out = Image.blend(rgb_out, grainy, _gr_op) if _gr_op < 1.0 else grainy
     return rgb_out
 
 
@@ -234,11 +336,11 @@ def generate_size(
             else:
                 _s_bolts[s] = generate_lightning_bolt(canvas_size, seed=sseed)
 
-    vignette_layer  = make_vignette(canvas_size)  if cfg.add_vignette  else None
-    scanlines_layer = make_scanlines(canvas_size) if cfg.add_scanlines else None
+    vignette_layer  = make_vignette(canvas_size, cfg.vignette_strength) if cfg.add_vignette  else None
+    scanlines_layer = make_scanlines(canvas_size, cfg.scanlines_alpha)  if cfg.add_scanlines else None
     embers_origin = (lx + lw // 2, ly + lh // 4) if cfg.add_embers else None
 
-    frames: list[Image.Image] = []
+    rgb_frames: list[Image.Image] = []
     for i in range(n_frames):
         s_idx     = frame_strike_idx[i]
         cur_bolts = _s_bolts[s_idx] if s_idx >= 0 else None
@@ -266,19 +368,66 @@ def generate_size(
             vignette_layer  = vignette_layer,
             scanlines_layer = scanlines_layer,
         )
-        frames.append(f.convert("P", palette=Image.ADAPTIVE, colors=256))
+        rgb_frames.append(f)  # keep RGB for multi-format output
 
-    out = cfg.output_dir / f"brand_{size_name}.gif"
-    frames[0].save(
-        out,
-        save_all=True,
-        append_images=frames[1:],
-        optimize=False,
-        duration=cfg.frame_ms,
-        loop=0,
-    )
-    kb = out.stat().st_size // 1024
-    print(f"    → {out}  ({kb} KB)")
+    # ── GIF ───────────────────────────────────────────────────────────────
+    if cfg.output_gif:
+        gif_frames = [f.convert("P", palette=Image.ADAPTIVE, colors=256) for f in rgb_frames]
+        out = cfg.output_dir / f"brand_{size_name}.gif"
+        gif_frames[0].save(
+            out,
+            save_all=True,
+            append_images=gif_frames[1:],
+            optimize=False,
+            duration=cfg.frame_ms,
+            loop=0,
+        )
+        kb = out.stat().st_size // 1024
+        print(f"    → {out}  ({kb} KB)")
+
+    # ── Animated WebP ─────────────────────────────────────────────────────
+    if cfg.output_webp:
+        out_webp = cfg.output_dir / f"brand_{size_name}.webp"
+        rgb_frames[0].save(
+            out_webp,
+            format="WEBP",
+            save_all=True,
+            append_images=rgb_frames[1:],
+            duration=cfg.frame_ms,
+            loop=0,
+            quality=85,
+        )
+        print(f"    → {out_webp}  ({out_webp.stat().st_size // 1024} KB)")
+
+    # ── Animated PNG ──────────────────────────────────────────────────────
+    if cfg.output_apng:
+        out_apng = cfg.output_dir / f"brand_{size_name}.apng"
+        rgb_frames[0].save(
+            out_apng,
+            format="PNG",
+            save_all=True,
+            append_images=rgb_frames[1:],
+            default_image=False,
+            duration=cfg.frame_ms,
+            loop=0,
+        )
+        print(f"    → {out_apng}  ({out_apng.stat().st_size // 1024} KB)")
+
+    # ── MP4 via imageio ───────────────────────────────────────────────────
+    if cfg.output_mp4:
+        try:
+            import imageio
+            import numpy as np
+            out_mp4 = cfg.output_dir / f"brand_{size_name}.mp4"
+            fps = max(1, round(1000 / cfg.frame_ms))
+            writer = imageio.get_writer(str(out_mp4), fps=fps, codec="libx264",
+                                        quality=8, macro_block_size=None)
+            for f in rgb_frames:
+                writer.append_data(np.array(f))
+            writer.close()
+            print(f"    → {out_mp4}  ({out_mp4.stat().st_size // 1024} KB)")
+        except Exception as e:
+            print(f"    ✗ MP4 skipped: {e} (ensure ffmpeg is on PATH)")
 
     if cfg.output_static:
         if cfg.add_lightning and any(la > 0 for la in lightning_alphas):

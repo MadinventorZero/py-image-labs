@@ -129,7 +129,13 @@ def make_holo_frame(
     return Image.fromarray(out, "RGBA")
 
 
-def apply_stylize(img: Image.Image, mode: str) -> Image.Image:
+def apply_stylize(
+    img: Image.Image,
+    mode: str,
+    sigma_s: float = 60.0,
+    sigma_r: float = 0.45,
+    shade_factor: float = 0.05,
+) -> Image.Image:
     if mode == "none":
         return img
     try:
@@ -142,17 +148,20 @@ def apply_stylize(img: Image.Image, mode: str) -> Image.Image:
     rgb   = np.array(img.convert("RGB"))
     bgr   = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
-    if mode == "cartoon":
-        out_bgr = cv2.stylization(bgr, sigma_s=60, sigma_r=0.45)
-    elif mode == "watercolor":
-        out_bgr = cv2.stylization(bgr, sigma_s=60, sigma_r=0.07)
+    if mode in ("cartoon", "watercolor"):
+        out_bgr = cv2.stylization(bgr, sigma_s=float(sigma_s), sigma_r=float(sigma_r))
     elif mode == "oil":
         try:
             out_bgr = cv2.xphoto.oilPainting(bgr, size=4, dynRatio=1)
         except AttributeError:
             out_bgr = cv2.stylization(bgr, sigma_s=40, sigma_r=0.30)
     elif mode == "sketch":
-        _, sketch_gray = cv2.pencilSketch(bgr, sigma_s=60, sigma_r=0.07, shade_factor=0.05)
+        _, sketch_gray = cv2.pencilSketch(
+            bgr,
+            sigma_s=float(sigma_s),
+            sigma_r=float(sigma_r),
+            shade_factor=float(shade_factor),
+        )
         out_bgr = cv2.cvtColor(sketch_gray, cv2.COLOR_GRAY2BGR)
     else:
         return img

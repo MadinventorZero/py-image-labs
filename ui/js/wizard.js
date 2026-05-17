@@ -20,7 +20,11 @@ const Wizard = (() => {
       steps: [
         { id: '05-layers',  label: 'Layers',  view: 'views/05-layers.html' },
         { id: '06-tagline', label: 'Tagline', view: 'views/06-tagline.html',
-          skipWhen: () => !state.config.layers.add_text },
+          skipWhen: () => {
+            const stack = state.config.effectStack || [];
+            const tag = stack.find(l => l.id === 'tagline');
+            return tag ? !tag.enabled : true;
+          } },
       ],
     },
     {
@@ -48,28 +52,10 @@ const Wizard = (() => {
         podcast_square:    true,
       },
       output_static: false,
-      layers: {
-        add_smoke:             true,
-        add_flash:             true,
-        add_text:              true,
-        lightning_mode:        'simple',
-        n_bolts:               2,
-        branch_depth:          4,
-        fork_concentration:    3,
-        subbranch_pct:         40,
-        add_embers:            false,
-        add_rain:              false,
-        add_snow:              false,
-        add_vignette:          true,
-        add_scanlines:         false,
-        tone_mode:             'color',
-        stylize_mode:          'none',
-        add_chroma_aberration: false,
-        add_bloom:             false,
-        add_film_grain:        false,
-        add_holo:              false,
-        add_bokeh:             false,
-      },
+      output: { gif: true, webp: false, mp4: false, apng: false, png_peak: true },
+      // effectStack is the v5 layer system; layers is kept for legacy compat
+      effectStack: buildDefaultEffectStack(),
+      layers: {},
       tagline: {
         text:          'Brand Name',
         anchor:        'center',
@@ -82,8 +68,9 @@ const Wizard = (() => {
         glow:          true,
       },
     },
-    previewSrc: null,
-    _blocked:   false,
+    previewSrc:  null,
+    gpuInfo:     null,
+    _blocked:    false,
   });
 
   const state = defaultState();

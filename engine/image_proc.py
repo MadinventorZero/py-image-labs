@@ -5,6 +5,9 @@ from rembg import remove, new_session
 
 from engine.models import RenderConfig
 from engine.effects.post import apply_stylize
+from engine.effects.anime import apply_anime_style
+from engine.effects.chibi import apply_chibi
+from engine.effects.upscale import upscale_image
 
 
 def _rembg_session():
@@ -53,5 +56,18 @@ def apply_image_processing(img: Image.Image, cfg: RenderConfig) -> Image.Image:
         nh = max(1, int(img.height * cfg.resize_pct / 100))
         img = img.resize((nw, nh), Image.LANCZOS)
     if cfg.stylize_mode != "none":
-        img = apply_stylize(img, cfg.stylize_mode)
+        img = apply_stylize(
+            img, cfg.stylize_mode,
+            sigma_s      = cfg.stylize_sigma_s,
+            sigma_r      = cfg.stylize_sigma_r,
+            shade_factor = cfg.stylize_shade_factor,
+        )
+    if cfg.anime_style != "none":
+        print(f"  Applying anime style: {cfg.anime_style}...")
+        img = apply_anime_style(img, cfg.anime_style)
+    if cfg.add_chibi:
+        img = apply_chibi(img, cfg.chibi_head_pct, cfg.chibi_head_scale)
+    if cfg.upscale_mode != "none":
+        print(f"  Upscaling 4× ({cfg.upscale_mode})...")
+        img = upscale_image(img, cfg.upscale_mode)
     return img

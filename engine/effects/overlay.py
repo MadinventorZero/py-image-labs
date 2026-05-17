@@ -26,7 +26,7 @@ def make_vignette(canvas_size: tuple[int, int], strength: float = 0.72) -> Image
     return Image.fromarray(rgba, "RGBA")
 
 
-def make_scanlines(canvas_size: tuple[int, int], alpha: int = 20) -> Image.Image:
+def make_scanlines(canvas_size: tuple[int, int], alpha: int = 20, **_) -> Image.Image:
     w, h = canvas_size
     scan = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(scan)
